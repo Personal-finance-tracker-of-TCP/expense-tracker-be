@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────
+enum Role {
+  ADMIN
+  USER
+}
+
+enum TxType {
+  INCOME
+  EXPENSE
+}
+
+enum TxSource {
+  MANUAL
+  SEPAY
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+  BOTH
+}
+
+enum PeriodType {
+  MONTHLY
+  TOTAL
+}
+
+enum TransferType {
+  IN
+  OUT
+}
+
+// ─── Models ───────────────────────────────────────────────
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String?       // null nếu đăng ký bằng OAuth
+  role         Role          @default(USER)
+  balance      Decimal       @default(0) @db.Decimal(15, 2)
+  refreshToken String?
+  createdAt    DateTime      @default(now())
+
+  transactions Transaction[]
+  budgets      Budget[]
+  categories   Category[]
+}
+
+model Transaction {
+  id              String    @id @default(cuid())
+  userId          String
+  categoryId      String
+  type            TxType
+  amount          Decimal   @db.Decimal(15, 2)
+  note            String?
+  transactionDate DateTime  @default(now())
+  source          TxSource  @default(MANUAL)
+  sepayId         String?   @unique
+  createdAt       DateTime  @default(now())
+
+  user     User      @relation(fields: [userId], references: [id])
+  category Category  @relation(fields: [categoryId], references: [id])
+  sepayLog SepayLog?
+
+  @@index([userId, transactionDate])
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  userId    String?      // null = danh mục mặc định hệ thống
+  name      String
+  icon      String?
+  type      CategoryType
+  isDefault Boolean      @default(false)
+
+  user         User?         @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+  budgets      Budget[]
+}
+
+model Budget {
+  id          String     @id @default(cuid())
+  userId      String
+  categoryId  String
+  limitAmount Decimal    @db.Decimal(15, 2)
+  period      PeriodType
+  month       Int?       // null nếu period = TOTAL
+  year        Int
+  createdAt   DateTime   @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([userId, categoryId, period, month, year])
+}
+
+model SepayLog {
+  id              String       @id @default(cuid())
+  sepayId         String       @unique
+  gateway         String
+  transferAmount  Decimal      @db.Decimal(15, 2)
+  transferType    TransferType
+  content         String?
+  transactionDate DateTime
+  processed       Boolean      @default(false)
+  transactionId   String?      @unique
+
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+}
