@@ -21,7 +21,8 @@ export const createCategory = async (req, res) => {
     const category = await categoryService.createCategory(req.user.id, parsed.data)
     return sendSuccess(res, category, 201)
   } catch (err) {
-    return sendError(res, 'Lỗi khi tạo danh mục', 500)
+    console.error('createCategory error:', err) // thêm dòng này
+    return sendError(res, err.message || 'Lỗi khi tạo danh mục', 500)
   }
 }
 
