@@ -5,7 +5,7 @@ import { errorHandler } from './middlewares/error.middleware.js'
 
 // Routes (uncomment khi từng người tạo xong)
 // import authRoutes from './routes/auth.routes.js'
-// import transactionRoutes from './routes/transaction.routes.js'
+import transactionRoutes from './routes/transaction.routes.js'
 import categoryRoutes from './routes/category.routes.js'
 // import budgetRoutes from './routes/budget.routes.js'
 // import reportRoutes from './routes/report.routes.js'
@@ -20,7 +20,7 @@ app.use(cors())
 app.use(express.json())
 
 // app.use('/api/auth', authRoutes)
-// app.use('/api/transactions', transactionRoutes)
+app.use('/api/transactions', transactionRoutes)
 app.use('/api/categories', categoryRoutes)
 // app.use('/api/budgets', budgetRoutes)
 // app.use('/api/reports', reportRoutes)
