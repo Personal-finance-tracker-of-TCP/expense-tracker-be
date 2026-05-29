@@ -1,10 +1,10 @@
-import express from 'express'
-import cors from 'cors'
-import dotenv from 'dotenv'
-import { errorHandler } from './middlewares/error.middleware.js'
+const express = require('express')
+const cors = require('cors')
+const dotenv = require('dotenv')
+const { errorHandler } = require('./middlewares/error.middleware')
 
-import transactionRoutes from './routes/transaction.routes.js'
-import categoryRoutes from './routes/category.routes.js'
+const transactionRoutes = require('./routes/transaction.routes')
+const categoryRoutes = require('./routes/category.routes')
 
 dotenv.config()
 const app = express()
@@ -30,4 +30,4 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
 
-export default app
+module.exports = app

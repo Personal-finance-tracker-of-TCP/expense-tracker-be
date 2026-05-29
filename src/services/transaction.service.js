@@ -1,6 +1,6 @@
-import prisma from '../lib/prisma.js'
+const prisma = require('../lib/prisma')
 
-export const getTransactions = async (userId, query) => {
+async function getTransactions(userId, query) {
   const { month, year, type, categoryId, search, page, limit } = query
 
   const where = { userId }
@@ -44,14 +44,14 @@ export const getTransactions = async (userId, query) => {
   }
 }
 
-export const getTransactionById = async (userId, transactionId) => {
+async function getTransactionById(userId, transactionId) {
   return prisma.transaction.findFirst({
     where: { id: transactionId, userId },
     include: { category: { select: { id: true, name: true, icon: true } } }
   })
 }
 
-export const createTransaction = async (userId, data) => {
+async function createTransaction(userId, data) {
   const { type, amount, categoryId, note, transactionDate } = data
 
   return prisma.$transaction(async (tx) => {
@@ -82,7 +82,7 @@ export const createTransaction = async (userId, data) => {
   })
 }
 
-export const updateTransaction = async (userId, transactionId, data) => {
+async function updateTransaction(userId, transactionId, data) {
   const existing = await prisma.transaction.findFirst({
     where: { id: transactionId, userId }
   })
@@ -130,7 +130,7 @@ export const updateTransaction = async (userId, transactionId, data) => {
   })
 }
 
-export const deleteTransaction = async (userId, transactionId) => {
+async function deleteTransaction(userId, transactionId) {
   const existing = await prisma.transaction.findFirst({
     where: { id: transactionId, userId }
   })
@@ -152,4 +152,12 @@ export const deleteTransaction = async (userId, transactionId) => {
 
     return true
   })
+}
+
+module.exports = {
+  getTransactions,
+  getTransactionById,
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
 }

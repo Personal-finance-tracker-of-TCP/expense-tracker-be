@@ -1,6 +1,6 @@
-import { z } from 'zod'
+const { z } = require('zod')
 
-export const createTransactionSchema = z.object({
+const createTransactionSchema = z.object({
   type: z.enum(['INCOME', 'EXPENSE'], {
     errorMap: () => ({ message: 'Loại giao dịch phải là INCOME hoặc EXPENSE' })
   }),
@@ -19,9 +19,9 @@ export const createTransactionSchema = z.object({
     .optional()
 })
 
-export const updateTransactionSchema = createTransactionSchema.partial()
+const updateTransactionSchema = createTransactionSchema.partial()
 
-export const getTransactionsQuerySchema = z.object({
+const getTransactionsQuerySchema = z.object({
   month: z.coerce.number().int().min(1).max(12).optional(),
   year: z.coerce.number().int().min(2000).optional(),
   type: z.enum(['INCOME', 'EXPENSE']).optional(),
@@ -30,3 +30,9 @@ export const getTransactionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20)
 })
+
+module.exports = {
+  createTransactionSchema,
+  updateTransactionSchema,
+  getTransactionsQuerySchema,
+}

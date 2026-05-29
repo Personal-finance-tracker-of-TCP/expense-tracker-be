@@ -1,18 +1,34 @@
-import jwt from 'jsonwebtoken'
-import { sendError } from '../utils/response.js'
+const { verifyAccessToken } = require('../utils/jwt')
 
-export const verifyToken = (req, res, next) => {
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      message: 'Chưa xác thực. Vui lòng đăng nhập',
+    })
+  }
+
+  const token = authHeader.split(' ')[1]
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: 'Token không được để trống',
+    })
+  }
+
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return sendError(res, 'Không có token xác thực', 401)
-    }
-
-    const token = authHeader.split(' ')[1]
-    const decoded = jwt.verify(token, process.env.JWT_SECRET)
-    req.user = decoded // { id, email, role }
-    next()
-  } catch (err) {
-    return sendError(res, 'Token không hợp lệ hoặc đã hết hạn', 401)
+    const payload = verifyAccessToken(token)
+    req.user = { userId: payload.userId }
+    return next()
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Token không hợp lệ hoặc đã hết hạn',
+    })
   }
 }
+
+module.exports = authMiddleware
