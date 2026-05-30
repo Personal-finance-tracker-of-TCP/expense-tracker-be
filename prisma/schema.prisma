@@ -48,7 +48,10 @@ model User {
   role         Role          @default(USER)
   balance      Decimal       @default(0) @db.Decimal(15, 2)
   refreshToken String?
+  avatarUrl    String?
+  provider     String?   @default("local")
   createdAt    DateTime      @default(now())
+  updatedAt    DateTime  @updatedAt
 
   transactions Transaction[]
   budgets      Budget[]

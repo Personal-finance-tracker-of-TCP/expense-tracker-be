@@ -1,19 +1,23 @@
-import * as transactionService from '../services/transaction.service.js'
-import { sendSuccess, sendError } from '../utils/response.js'
-import {
+const transactionService = require('../services/transaction.service')
+const { sendSuccess, sendError } = require('../utils/response')
+const {
   createTransactionSchema,
   updateTransactionSchema,
   getTransactionsQuerySchema
-} from '../validators/transaction.validator.js'
+} = require('../validators/transaction.validator')
 
-export const getTransactions = async (req, res) => {
+function getValidationMessage(error) {
+  return error.issues?.[0]?.message || 'Dữ liệu không hợp lệ'
+}
+
+async function getTransactions(req, res) {
   try {
     const parsed = getTransactionsQuerySchema.safeParse(req.query)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
-    const result = await transactionService.getTransactions(req.user.id, parsed.data)
+    const result = await transactionService.getTransactions(req.user.userId, parsed.data)
     return sendSuccess(res, result)
   } catch (err) {
     console.error('getTransactions error:', err)
@@ -21,9 +25,9 @@ export const getTransactions = async (req, res) => {
   }
 }
 
-export const getTransactionById = async (req, res) => {
+async function getTransactionById(req, res) {
   try {
-    const transaction = await transactionService.getTransactionById(req.user.id, req.params.id)
+    const transaction = await transactionService.getTransactionById(req.user.userId, req.params.id)
     if (!transaction) return sendError(res, 'Không tìm thấy giao dịch', 404)
     return sendSuccess(res, transaction)
   } catch (err) {
@@ -32,14 +36,14 @@ export const getTransactionById = async (req, res) => {
   }
 }
 
-export const createTransaction = async (req, res) => {
+async function createTransaction(req, res) {
   try {
     const parsed = createTransactionSchema.safeParse(req.body)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
-    const transaction = await transactionService.createTransaction(req.user.id, parsed.data)
+    const transaction = await transactionService.createTransaction(req.user.userId, parsed.data)
     return sendSuccess(res, transaction, 201)
   } catch (err) {
     console.error('createTransaction error:', err)
@@ -47,15 +51,15 @@ export const createTransaction = async (req, res) => {
   }
 }
 
-export const updateTransaction = async (req, res) => {
+async function updateTransaction(req, res) {
   try {
     const parsed = updateTransactionSchema.safeParse(req.body)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
     const transaction = await transactionService.updateTransaction(
-      req.user.id,
+      req.user.userId,
       req.params.id,
       parsed.data
     )
@@ -67,13 +71,21 @@ export const updateTransaction = async (req, res) => {
   }
 }
 
-export const deleteTransaction = async (req, res) => {
+async function deleteTransaction(req, res) {
   try {
-    const result = await transactionService.deleteTransaction(req.user.id, req.params.id)
+    const result = await transactionService.deleteTransaction(req.user.userId, req.params.id)
     if (!result) return sendError(res, 'Không tìm thấy giao dịch hoặc không có quyền', 403)
     return sendSuccess(res, { message: 'Xoá giao dịch thành công' })
   } catch (err) {
     console.error('deleteTransaction error:', err)
     return sendError(res, 'Lỗi khi xoá giao dịch', 500)
   }
+}
+
+module.exports = {
+  getTransactions,
+  getTransactionById,
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
 }
