@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
 const defaultCategories = [
@@ -27,5 +27,8 @@ async function main() {
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
   .finally(() => prisma.$disconnect())

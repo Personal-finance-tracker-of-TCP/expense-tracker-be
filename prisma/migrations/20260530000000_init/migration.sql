@@ -23,7 +23,7 @@ CREATE TYPE "TransferType" AS ENUM ('IN', 'OUT');
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "fullName" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
     "passwordHash" TEXT,
     "role" "Role" NOT NULL DEFAULT 'USER',
     "balance" DECIMAL(15,2) NOT NULL DEFAULT 0,
