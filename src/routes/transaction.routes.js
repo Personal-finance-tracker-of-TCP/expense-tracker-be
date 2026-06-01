@@ -1,10 +1,10 @@
-import { Router } from 'express'
-import * as transactionController from '../controllers/transaction.controller.js'
-import { verifyToken } from '../middlewares/auth.middleware.js'
+const { Router } = require('express')
+const transactionController = require('../controllers/transaction.controller')
+const authMiddleware = require('../middlewares/auth.middleware')
 
 const router = Router()
 
-router.use(verifyToken)
+router.use(authMiddleware)
 
 router.get('/', transactionController.getTransactions)
 router.post('/', transactionController.createTransaction)
@@ -12,4 +12,4 @@ router.get('/:id', transactionController.getTransactionById)
 router.put('/:id', transactionController.updateTransaction)
 router.delete('/:id', transactionController.deleteTransaction)
 
-export default router
+module.exports = router

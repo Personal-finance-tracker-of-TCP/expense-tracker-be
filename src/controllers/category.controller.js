@@ -1,24 +1,28 @@
-import * as categoryService from '../services/category.service.js'
-import { sendSuccess, sendError } from '../utils/response.js'
-import { createCategorySchema, updateCategorySchema } from '../validators/category.validator.js'
+const categoryService = require('../services/category.service')
+const { sendSuccess, sendError } = require('../utils/response')
+const { createCategorySchema, updateCategorySchema } = require('../validators/category.validator')
 
-export const getCategories = async (req, res) => {
+function getValidationMessage(error) {
+  return error.issues?.[0]?.message || 'Dữ liệu không hợp lệ'
+}
+
+async function getCategories(req, res) {
   try {
-    const categories = await categoryService.getCategories(req.user.id)
+    const categories = await categoryService.getCategories(req.user.userId)
     return sendSuccess(res, categories)
   } catch (err) {
     return sendError(res, 'Lỗi khi lấy danh mục', 500)
   }
 }
 
-export const createCategory = async (req, res) => {
+async function createCategory(req, res) {
   try {
     const parsed = createCategorySchema.safeParse(req.body)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
-    const category = await categoryService.createCategory(req.user.id, parsed.data)
+    const category = await categoryService.createCategory(req.user.userId, parsed.data)
     return sendSuccess(res, category, 201)
   } catch (err) {
     console.error('createCategory error:', err) // thêm dòng này
@@ -26,15 +30,15 @@ export const createCategory = async (req, res) => {
   }
 }
 
-export const updateCategory = async (req, res) => {
+async function updateCategory(req, res) {
   try {
     const parsed = updateCategorySchema.safeParse(req.body)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
     const category = await categoryService.updateCategory(
-      req.user.id,
+      req.user.userId,
       req.params.id,
       parsed.data
     )
@@ -47,9 +51,9 @@ export const updateCategory = async (req, res) => {
   }
 }
 
-export const deleteCategory = async (req, res) => {
+async function deleteCategory(req, res) {
   try {
-    const result = await categoryService.deleteCategory(req.user.id, req.params.id)
+    const result = await categoryService.deleteCategory(req.user.userId, req.params.id)
 
     if (result.error === 'NOT_FOUND') {
       return sendError(res, 'Không tìm thấy danh mục hoặc không có quyền', 403)
@@ -67,4 +71,11 @@ export const deleteCategory = async (req, res) => {
   } catch (err) {
     return sendError(res, 'Lỗi khi xoá danh mục', 500)
   }
+}
+
+module.exports = {
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
 }

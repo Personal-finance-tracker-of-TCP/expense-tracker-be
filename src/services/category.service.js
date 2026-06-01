@@ -1,7 +1,7 @@
-import prisma from '../lib/prisma.js'
+const prisma = require('../lib/prisma')
 
 // Lấy danh mục hệ thống + danh mục cá nhân của user
-export const getCategories = async (userId) => {
+async function getCategories(userId) {
   return prisma.category.findMany({
     where: {
       OR: [
@@ -17,7 +17,7 @@ export const getCategories = async (userId) => {
 }
 
 // Tạo danh mục cá nhân
-export const createCategory = async (userId, data) => {
+async function createCategory(userId, data) {
   return prisma.category.create({
     data: {
       ...data,
@@ -28,7 +28,7 @@ export const createCategory = async (userId, data) => {
 }
 
 // Cập nhật danh mục — chỉ cho sửa danh mục của chính mình
-export const updateCategory = async (userId, categoryId, data) => {
+async function updateCategory(userId, categoryId, data) {
   const category = await prisma.category.findFirst({
     where: { id: categoryId, userId } // userId phải khớp, không sửa được danh mục hệ thống
   })
@@ -42,7 +42,7 @@ export const updateCategory = async (userId, categoryId, data) => {
 }
 
 // Xoá danh mục — kiểm tra còn giao dịch liên kết không
-export const deleteCategory = async (userId, categoryId) => {
+async function deleteCategory(userId, categoryId) {
   const category = await prisma.category.findFirst({
     where: { id: categoryId, userId }
   })
@@ -57,4 +57,11 @@ export const deleteCategory = async (userId, categoryId) => {
 
   await prisma.category.delete({ where: { id: categoryId } })
   return { success: true }
+}
+
+module.exports = {
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
 }
