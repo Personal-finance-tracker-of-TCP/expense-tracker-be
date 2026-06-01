@@ -8,7 +8,7 @@ import { errorHandler } from './middlewares/error.middleware.js'
 import transactionRoutes from './routes/transaction.routes.js'
 import categoryRoutes from './routes/category.routes.js'
 // import budgetRoutes from './routes/budget.routes.js'
-// import reportRoutes from './routes/report.routes.js'
+import reportRoutes from './routes/report.routes.js'
 // import webhookRoutes from './routes/webhook.routes.js'
 // import aiRoutes from './routes/ai.routes.js'
 
@@ -23,7 +23,7 @@ app.use(express.json())
 app.use('/api/transactions', transactionRoutes)
 app.use('/api/categories', categoryRoutes)
 // app.use('/api/budgets', budgetRoutes)
-// app.use('/api/reports', reportRoutes)
+app.use('/api/reports', reportRoutes)
 // app.use('/api/webhook', webhookRoutes)
 // app.use('/api/ai', aiRoutes)
 
