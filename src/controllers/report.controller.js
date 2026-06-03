@@ -1,17 +1,26 @@
-import * as reportService from '../services/report.service.js'
-import { sendSuccess, sendError } from '../utils/response.js'
-import { reportQuerySchema, exportQuerySchema } from '../validators/report.validator.js'
-import ExcelJS from 'exceljs'
-import PDFDocument from 'pdfkit'
+const reportService = require('../services/report.service')
+const { sendSuccess, sendError } = require('../utils/response')
+const { reportQuerySchema, exportQuerySchema } = require('../validators/report.validator')
+const ExcelJS = require('exceljs')
+const PDFDocument = require('pdfkit')
 
-export const getSummary = async (req, res) => {
+const getCategoryDisplay = (category) => ({
+  name: category?.name || 'Ch\u01b0a ph\u00e2n lo\u1ea1i',
+  icon: category?.icon || '\uD83D\uDCE6',
+})
+
+function getValidationMessage(error) {
+  return error.issues?.[0]?.message || 'Du lieu khong hop le'
+}
+
+const getSummary = async (req, res) => {
   try {
     const parsed = reportQuerySchema.safeParse(req.query)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
-    const summary = await reportService.getSummary(req.user.id, parsed.data)
+    const summary = await reportService.getSummary(req.user.userId, parsed.data)
     return sendSuccess(res, summary)
   } catch (err) {
     console.error('getSummary error:', err)
@@ -19,14 +28,14 @@ export const getSummary = async (req, res) => {
   }
 }
 
-export const getChartData = async (req, res) => {
+const getChartData = async (req, res) => {
   try {
     const parsed = reportQuerySchema.safeParse(req.query)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
-    const data = await reportService.getChartData(req.user.id, parsed.data)
+    const data = await reportService.getChartData(req.user.userId, parsed.data)
     return sendSuccess(res, data)
   } catch (err) {
     console.error('getChartData error:', err)
@@ -34,18 +43,15 @@ export const getChartData = async (req, res) => {
   }
 }
 
-export const exportReport = async (req, res) => {
+const exportReport = async (req, res) => {
   try {
     const parsed = exportQuerySchema.safeParse(req.query)
     if (!parsed.success) {
-      return sendError(res, parsed.error.errors[0].message, 400)
+      return sendError(res, getValidationMessage(parsed.error), 400)
     }
 
     const { format } = parsed.data
-    const { transactions, summary } = await reportService.getExportData(
-      req.user.id,
-      parsed.data
-    )
+    const { transactions, summary } = await reportService.getExportData(req.user.userId, parsed.data)
 
     if (transactions.length === 0) {
       return sendError(res, 'Không có giao dịch trong kỳ này', 404)
@@ -65,10 +71,11 @@ export const exportReport = async (req, res) => {
         { header: 'Nguồn',      key: 'source',   width: 10 },
       ]
       transactions.forEach(t => {
+        const category = getCategoryDisplay(t.category)
         sheet1.addRow({
           date:     new Date(t.transactionDate).toLocaleDateString('vi-VN'),
           type:     t.type === 'INCOME' ? 'Thu' : 'Chi',
-          category: `${t.category.icon} ${t.category.name}`,
+          category: `${category.icon} ${category.name}`,
           amount:   Number(t.amount),
           note:     t.note || '',
           source:   t.source
@@ -113,10 +120,11 @@ export const exportReport = async (req, res) => {
       doc.fontSize(13).text('Chi tiết giao dịch')
       doc.moveDown(0.5)
       transactions.forEach(t => {
+        const category = getCategoryDisplay(t.category)
         doc.fontSize(10).text(
           `${new Date(t.transactionDate).toLocaleDateString('vi-VN')} | ` +
           `${t.type === 'INCOME' ? 'Thu' : 'Chi'} | ` +
-          `${t.category.name} | ` +
+          `${category.icon} ${category.name} | ` +
           `${Number(t.amount).toLocaleString('vi-VN')} đ` +
           `${t.note ? ` | ${t.note}` : ''}`
         )
@@ -129,4 +137,10 @@ export const exportReport = async (req, res) => {
     console.error('exportReport error:', err)
     return sendError(res, 'Lỗi khi xuất báo cáo', 500)
   }
+}
+
+module.exports = {
+  getSummary,
+  getChartData,
+  exportReport,
 }

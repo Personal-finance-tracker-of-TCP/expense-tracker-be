@@ -107,7 +107,7 @@ async function updateTransaction(userId, transactionId, data) {
       data: {
         ...(type && { type }),
         ...(amount && { amount }),
-        ...(categoryId && { categoryId }),
+        ...(categoryId !== undefined && { categoryId }),
         ...(note !== undefined && { note }),
         ...(transactionDate && { transactionDate: new Date(transactionDate) })
       },

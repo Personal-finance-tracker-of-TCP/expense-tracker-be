@@ -5,103 +5,112 @@ const {
   refresh: refreshService,
   logout: logoutService,
 } = require('../services/auth.service')
+const { sendSuccess, sendError } = require('../utils/response')
 
-function sendError(res, statusCode, message) {
-  return res.status(statusCode).json({
-    success: false,
-    message,
-  })
+function normalizeText(value) {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
-// Xử lý đăng ký tài khoản local mới bằng name, email, password.
+function normalizeEmail(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+// Xu ly dang ky tai khoan local bang name, email, password.
 async function registerController(req, res) {
-  const { name, email, password } = req.body || {}
+  const name = normalizeText(req.body?.name || req.body?.fullName)
+  const email = normalizeEmail(req.body?.email)
+  const password = typeof req.body?.password === 'string' ? req.body.password : ''
 
   if (!name) {
-    return sendError(res, 400, 'Vui lòng nhập họ tên')
+    return sendError(res, 'Vui lòng nhập họ tên')
+  }
+
+  if (name.length < 2) {
+    return sendError(res, 'Tên phải có ít nhất 2 ký tự')
   }
 
   if (!email) {
-    return sendError(res, 400, 'Vui lòng nhập email')
+    return sendError(res, 'Vui lòng nhập email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email không hợp lệ')
   }
 
   if (!password) {
-    return sendError(res, 400, 'Vui lòng nhập mật khẩu')
+    return sendError(res, 'Vui lòng nhập mật khẩu')
   }
 
   if (password.length < 8) {
-    return sendError(res, 400, 'Mật khẩu phải có ít nhất 8 ký tự')
+    return sendError(res, 'Mật khẩu phải có ít nhất 8 ký tự')
   }
 
   try {
     const result = await registerService(name, email, password)
-    return res.status(201).json({
-      success: true,
-      data: result,
-    })
+    return sendSuccess(res, result, 201)
   } catch (error) {
-    return sendError(res, 400, error.message)
+    return sendError(res, error.message)
   }
 }
 
-// Xử lý đăng nhập bằng email và mật khẩu local.
+// Xu ly dang nhap bang email va mat khau local.
 async function loginController(req, res) {
-  const { email, password } = req.body || {}
+  const email = normalizeEmail(req.body?.email)
+  const password = typeof req.body?.password === 'string' ? req.body.password : ''
 
   if (!email) {
-    return sendError(res, 400, 'Vui lòng nhập email')
+    return sendError(res, 'Vui lòng nhập email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email không hợp lệ')
   }
 
   if (!password) {
-    return sendError(res, 400, 'Vui lòng nhập mật khẩu')
+    return sendError(res, 'Vui lòng nhập mật khẩu')
   }
 
   try {
     const result = await loginService(email, password)
-    return res.status(200).json({
-      success: true,
-      data: result,
-    })
+    return sendSuccess(res, result)
   } catch (error) {
-    return sendError(res, 401, error.message)
+    return sendError(res, error.message, 401)
   }
 }
 
-// Xử lý cấp lại token từ refresh token hợp lệ.
+// Cap lai access token tu refresh token hop le.
 async function refreshTokenController(req, res) {
-  const { refreshToken } = req.body || {}
+  const refreshToken = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : ''
 
   if (!refreshToken) {
-    return sendError(res, 400, 'Vui lòng cung cấp refresh token')
+    return sendError(res, 'Vui lòng cung cấp refresh token')
   }
 
   try {
     const result = await refreshService(refreshToken)
-    return res.status(200).json({
-      success: true,
-      data: result,
-    })
+    return sendSuccess(res, result)
   } catch (error) {
-    return sendError(res, 401, error.message)
+    return sendError(res, error.message, 401)
   }
 }
 
-// Xử lý đăng xuất bằng cách xoá refresh token đang lưu trong User.
+// Dang xuat bang cach xoa refresh token dang luu trong User.
 async function logoutUserController(req, res) {
   const userId = req.user.userId
 
   try {
     await logoutService(userId)
-    return res.status(200).json({
-      success: true,
-      data: { message: 'Đăng xuất thành công' },
-    })
+    return sendSuccess(res, { message: 'Đăng xuất thành công' })
   } catch (error) {
-    return sendError(res, 500, error.message)
+    return sendError(res, error.message, 500)
   }
 }
 
-// Lấy thông tin an toàn của user hiện tại.
+// Lay thong tin an toan cua user hien tai.
 async function getMeController(req, res) {
   const userId = req.user.userId
 
@@ -113,6 +122,7 @@ async function getMeController(req, res) {
         name: true,
         email: true,
         role: true,
+        sepayCode: true,
         avatarUrl: true,
         balance: true,
         provider: true,
@@ -121,15 +131,12 @@ async function getMeController(req, res) {
     })
 
     if (!user) {
-      return sendError(res, 404, 'Không tìm thấy người dùng')
+      return sendError(res, 'Không tìm thấy người dùng', 404)
     }
 
-    return res.status(200).json({
-      success: true,
-      data: user,
-    })
+    return sendSuccess(res, user)
   } catch (error) {
-    return sendError(res, 500, error.message)
+    return sendError(res, error.message, 500)
   }
 }
 

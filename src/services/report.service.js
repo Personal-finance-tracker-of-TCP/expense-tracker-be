@@ -1,4 +1,4 @@
-import prisma from '../lib/prisma.js'
+const prisma = require('../lib/prisma')
 
 // Helper: xác định khoảng thời gian từ query
 const getDateRange = (query) => {
@@ -21,7 +21,7 @@ const getDateRange = (query) => {
 }
 
 // Tổng hợp thu/chi/tiết kiệm trong kỳ
-export const getSummary = async (userId, query) => {
+const getSummary = async (userId, query) => {
   const dateRange = getDateRange(query)
 
   const transactions = await prisma.transaction.findMany({
@@ -48,7 +48,7 @@ export const getSummary = async (userId, query) => {
 }
 
 // Dữ liệu biểu đồ thu/chi theo từng tháng (6 tháng gần nhất)
-export const getChartData = async (userId, query) => {
+const getChartData = async (userId, query) => {
   const { year } = query
   const currentYear = year || new Date().getFullYear()
 
@@ -92,14 +92,19 @@ export const getChartData = async (userId, query) => {
     take: 5
   })
 
-  const categoryIds = categoryBreakdown.map(c => c.categoryId)
+  const categoryIds = categoryBreakdown
+    .map(c => c.categoryId)
+    .filter(Boolean)
   const categories = await prisma.category.findMany({
     where: { id: { in: categoryIds } },
     select: { id: true, name: true, icon: true }
   })
 
   const breakdown = categoryBreakdown.map(c => {
-    const cat = categories.find(cat => cat.id === c.categoryId)
+    const cat = categories.find(cat => cat.id === c.categoryId) || {
+      name: 'Ch\u01b0a ph\u00e2n lo\u1ea1i',
+      icon: '\uD83D\uDCE6'
+    }
     return {
       categoryId: c.categoryId,
       name: cat?.name || 'Không phân loại',
@@ -112,7 +117,7 @@ export const getChartData = async (userId, query) => {
 }
 
 // Lấy data để xuất PDF/Excel
-export const getExportData = async (userId, query) => {
+const getExportData = async (userId, query) => {
   const dateRange = getDateRange(query)
 
   const transactions = await prisma.transaction.findMany({
@@ -124,4 +129,10 @@ export const getExportData = async (userId, query) => {
   const summary = await getSummary(userId, query)
 
   return { transactions, summary, dateRange }
+}
+
+module.exports = {
+  getSummary,
+  getChartData,
+  getExportData,
 }
