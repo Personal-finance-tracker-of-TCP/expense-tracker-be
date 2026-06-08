@@ -140,6 +140,7 @@ function buildFallbackAdvice(summary) {
     summary,
     riskLevel: getRiskLevel(summary),
     insights,
+    recommendations: suggestions.map((message) => ({ message })),
     suggestions,
     savingGoal: {
       targetRate: summary.savingsRate < 20 ? 20 : Math.min(summary.savingsRate + 5, 50),
@@ -156,15 +157,119 @@ function extractJsonObject(text) {
   return JSON.parse(text.slice(start, end + 1))
 }
 
+function getAdviceText(value) {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+  return getAdviceText(value.message || value.text || value.content || value.description || value.advice)
+}
+
+function normalizeAdviceObjects(value) {
+  const normalizeOne = (item, fallbackTitle) => {
+    if (typeof item === 'string') {
+      const message = item.trim()
+      return message ? [{ title: fallbackTitle, message }] : []
+    }
+
+    if (typeof item === 'number' || typeof item === 'boolean') {
+      return [{ title: fallbackTitle, message: String(item) }]
+    }
+
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+
+    const title = getAdviceText(item.title || item.heading || item.name) || fallbackTitle
+    const message = getAdviceText(item.message || item.text || item.content || item.description || item.advice)
+    const severity = getAdviceText(item.severity || item.type || item.level)
+
+    if (message) {
+      return [{ title, message, ...(severity ? { severity } : {}) }]
+    }
+
+    return Object.entries(item).flatMap(([key, entryValue]) => normalizeOne(entryValue, key))
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => normalizeOne(item))
+  }
+
+  return normalizeOne(value)
+}
+
+function normalizeAdviceTexts(value) {
+  return normalizeAdviceObjects(value)
+    .map((item) => item.message)
+    .filter(Boolean)
+}
+
+function getAiStatus() {
+  const hasGeminiApiKey = Boolean(process.env.GEMINI_API_KEY)
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const hasFetch = typeof fetch === 'function'
+
+  return {
+    provider: 'GEMINI',
+    model,
+    configured: hasGeminiApiKey && hasFetch,
+    hasGeminiApiKey,
+    hasFetch,
+  }
+}
+
+async function getGeminiErrorPayload(response) {
+  const rawText = await response.text().catch(() => '')
+  if (!rawText) return null
+
+  try {
+    return JSON.parse(rawText)
+  } catch (error) {
+    return rawText
+  }
+}
+
+function getGeminiErrorMessage(payload) {
+  if (!payload) return null
+  if (typeof payload === 'string') return payload
+  return payload.error?.message || payload.message || JSON.stringify(payload)
+}
+
+function createGeminiApiError(response, payload) {
+  const message = getGeminiErrorMessage(payload) || 'Gemini API call failed'
+  const error = new Error(message)
+  error.status = response.status
+  error.statusText = response.statusText
+  error.response = payload
+  return error
+}
+
+function logGeminiError(context, error) {
+  console.error(`${context}:`, {
+    status: error.status,
+    statusText: error.statusText,
+    message: error.message,
+    response: error.response,
+  })
+}
+
 async function callGemini(summary) {
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey || typeof fetch !== 'function') return null
+  const hasGeminiApiKey = Boolean(apiKey)
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
 
-  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+  console.log('Gemini advice config:', {
+    hasGeminiApiKey,
+    model,
+    hasFetch: typeof fetch === 'function',
+  })
+
+  if (!hasGeminiApiKey || typeof fetch !== 'function') return null
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
   const prompt = [
     'You are a personal finance advisor for MoneyTrack.',
-    'Return only JSON with keys: summary, riskLevel, insights, suggestions, savingGoal.',
+    'Return only JSON with keys: provider, summary, riskLevel, insights, recommendations, savingGoal.',
+    'summary must be a short string.',
+    'insights must be an array of objects: { "title": string, "message": string, "severity": "LOW" | "MEDIUM" | "HIGH" }.',
+    'recommendations must be an array of objects: { "title": string, "message": string }.',
     'Use concise Vietnamese advice. Do not ask for personal identity details.',
     `Anonymized financial summary: ${JSON.stringify(summary)}`,
   ].join('\n')
@@ -180,7 +285,10 @@ async function callGemini(summary) {
     }),
   })
 
-  if (!response.ok) return null
+  if (!response.ok) {
+    const payload = await getGeminiErrorPayload(response)
+    throw createGeminiApiError(response, payload)
+  }
 
   const body = await response.json()
   const text = body?.candidates?.[0]?.content?.parts?.[0]?.text
@@ -189,27 +297,137 @@ async function callGemini(summary) {
   const parsed = extractJsonObject(text)
   if (!parsed) return null
 
+  const recommendations = normalizeAdviceObjects(parsed.recommendations || parsed.suggestions)
+
   return {
     ...parsed,
     summary,
+    insights: normalizeAdviceObjects(parsed.insights),
+    recommendations,
+    suggestions: normalizeAdviceTexts(recommendations),
     source: 'gemini',
   }
 }
 
 async function getAdvice(userId, input = {}) {
   const summary = await getFinancialSummary(userId, input)
+  const month = Number(input.month) || (new Date().getMonth() + 1)
+  const year = Number(input.year) || new Date().getFullYear()
+  const periodStr = `MONTH_${year}_${String(month).padStart(2, '0')}`
+
+  let adviceResult = null
+  let provider = 'RULE_BASED'
 
   try {
     const geminiAdvice = await callGemini(summary)
-    if (geminiAdvice) return geminiAdvice
+    if (geminiAdvice) {
+      adviceResult = geminiAdvice
+      provider = 'GEMINI'
+    }
   } catch (err) {
-    console.error('Gemini advice error:', err)
+    logGeminiError('Gemini advice error', err)
   }
 
-  return buildFallbackAdvice(summary)
+  if (!adviceResult) {
+    adviceResult = buildFallbackAdvice(summary)
+    provider = 'RULE_BASED'
+  }
+
+  // Save advice to AiAdviceLog table
+  try {
+    await prisma.aiAdviceLog.create({
+      data: {
+        userId,
+        period: periodStr,
+        inputSummary: summary,
+        result: {
+          summary: typeof adviceResult.summary === 'string' ? adviceResult.summary : '',
+          riskLevel: adviceResult.riskLevel,
+          insights: adviceResult.insights,
+          suggestions: adviceResult.suggestions,
+          savingGoal: adviceResult.savingGoal,
+        },
+        provider,
+      }
+    })
+  } catch (err) {
+    console.error('Error saving AiAdviceLog:', err)
+  }
+
+  return {
+    ...adviceResult,
+    provider,
+  }
+}
+
+async function getHistory(userId) {
+  return prisma.aiAdviceLog.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  })
+}
+
+async function chat(userId, body = {}) {
+  const { message, history, month, year } = body
+  const summary = await getFinancialSummary(userId, { month, year })
+
+  const apiKey = process.env.GEMINI_API_KEY
+  const hasGeminiApiKey = Boolean(apiKey)
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+
+  console.log('Gemini chat config:', {
+    hasGeminiApiKey,
+    model,
+    hasFetch: typeof fetch === 'function',
+  })
+
+  if (!hasGeminiApiKey || typeof fetch !== 'function') {
+    return {
+      text: "Xin lỗi, tính năng chat AI chưa được cấu hình khóa API Gemini. Vui lòng kiểm tra lại cấu hình hệ thống.",
+      source: "fallback"
+    }
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+  const prompt = [
+    'You are a personal finance advisor for MoneyTrack.',
+    'Provide a helpful, friendly, and concise answer in Vietnamese.',
+    'Do not ask for personal identity details.',
+    `Anonymized financial summary of the user for period ${summary.period}: ${JSON.stringify(summary)}.`,
+    `Chat history: ${JSON.stringify(history || [])}`,
+    `User message: ${message}`
+  ].join('\n')
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+    }),
+  })
+
+  if (!response.ok) {
+    const payload = await getGeminiErrorPayload(response)
+    const error = createGeminiApiError(response, payload)
+    logGeminiError('Gemini chat error', error)
+    throw error
+  }
+
+  const resBody = await response.json()
+  const text = resBody?.candidates?.[0]?.content?.parts?.[0]?.text || "Không có phản hồi từ AI."
+
+  return {
+    text,
+    source: 'gemini'
+  }
 }
 
 module.exports = {
+  getAiStatus,
   getAdvice,
   getFinancialSummary,
+  chat,
+  getHistory,
 }

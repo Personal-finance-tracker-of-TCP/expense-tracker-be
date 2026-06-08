@@ -6,6 +6,9 @@ const router = Router()
 
 router.use(authMiddleware)
 
+router.get('/status', aiController.getStatus)
 router.post('/advice', aiController.getAdvice)
+router.post('/chat', aiController.chat)
+router.get('/history', aiController.getHistory)
 
 module.exports = router

@@ -7,13 +7,25 @@ function getStatusCode(error) {
 
 async function handleSepayWebhook(req, res) {
   const expectedSecret = process.env.SEPAY_WEBHOOK_SECRET
-  const providedSecret = req.headers['x-sepay-secret']
 
   if (!expectedSecret) {
     return sendError(res, 'SEPAY_WEBHOOK_SECRET chua duoc cau hinh', 500)
   }
 
-  if (providedSecret !== expectedSecret) {
+  // Hỗ trợ 2 kiểu header:
+  // 1. x-sepay-secret: <secret>
+  // 2. Authorization: Apikey <secret>
+  let providedSecret = req.headers['x-sepay-secret']
+
+  if (!providedSecret) {
+    const authHeader = req.headers['authorization'] || ''
+    const match = authHeader.match(/^Apikey\s+(.+)$/i)
+    if (match) {
+      providedSecret = match[1]
+    }
+  }
+
+  if (!providedSecret || providedSecret !== expectedSecret) {
     return sendError(res, 'SePay secret khong hop le', 401)
   }
 
