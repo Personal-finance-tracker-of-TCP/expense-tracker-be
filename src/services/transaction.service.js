@@ -1,5 +1,10 @@
 const prisma = require('../lib/prisma')
 
+function getBalanceDelta(type, amount) {
+  const numericAmount = Number(amount)
+  return type === 'INCOME' ? numericAmount : -numericAmount
+}
+
 async function getTransactions(userId, query) {
   const { month, year, type, categoryId, search, page, limit } = query
 
@@ -73,7 +78,7 @@ async function createTransaction(userId, data) {
       where: { id: userId },
       data: {
         balance: {
-          increment: type === 'INCOME' ? amount : -amount
+          increment: getBalanceDelta(type, amount)
         }
       }
     })
@@ -97,7 +102,7 @@ async function updateTransaction(userId, transactionId, data) {
       where: { id: userId },
       data: {
         balance: {
-          increment: existing.type === 'INCOME' ? -existing.amount : Number(existing.amount)
+          increment: -getBalanceDelta(existing.type, existing.amount)
         }
       }
     })
@@ -121,7 +126,7 @@ async function updateTransaction(userId, transactionId, data) {
       where: { id: userId },
       data: {
         balance: {
-          increment: newType === 'INCOME' ? newAmount : -newAmount
+          increment: getBalanceDelta(newType, newAmount)
         }
       }
     })
@@ -145,7 +150,7 @@ async function deleteTransaction(userId, transactionId) {
       where: { id: userId },
       data: {
         balance: {
-          increment: existing.type === 'INCOME' ? -existing.amount : Number(existing.amount)
+          increment: -getBalanceDelta(existing.type, existing.amount)
         }
       }
     })

@@ -123,6 +123,8 @@ async function getMeController(req, res) {
         email: true,
         role: true,
         sepayCode: true,
+        bankAccountNumber: true,
+        sepayLinkedAt: true,
         avatarUrl: true,
         balance: true,
         provider: true,

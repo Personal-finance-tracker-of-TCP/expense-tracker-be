@@ -24,6 +24,9 @@ app.use(
   })
 )
 app.use(express.json())
+const cookieParser = require('cookie-parser')
+app.use(cookieParser())
+
 
 const authRoutes = require('./routes/auth.routes')
 const transactionRoutes = require('./routes/transaction.routes')
@@ -31,7 +34,11 @@ const categoryRoutes = require('./routes/category.routes')
 const reportRoutes = require('./routes/report.routes')
 const budgetRoutes = require('./routes/budget.routes')
 const aiRoutes = require('./routes/ai.routes')
-const { webhookRoutes, adminSepayRoutes } = require('./routes/webhook.routes')
+const { webhookRoutes } = require('./routes/webhook.routes')
+const adminRoutes = require('./routes/admin.routes')
+const bankLinkRoutes = require('./routes/bank-link.routes')
+const notificationRoutes = require('./routes/notification.routes')
+const userRoutes = require('./routes/user.routes')
 
 app.use('/auth', authRoutes)
 
@@ -58,7 +65,10 @@ app.use('/api/budgets', budgetRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/webhooks', webhookRoutes)
-app.use('/api/admin', adminSepayRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/bank-link', bankLinkRoutes)
+app.use('/api/notifications', notificationRoutes)
+app.use('/api/users', userRoutes)
 
 app.use(errorHandler)
 

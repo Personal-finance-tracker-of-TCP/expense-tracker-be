@@ -13,6 +13,8 @@ function toSafeUser(user) {
     email: user.email,
     role: user.role,
     sepayCode: user.sepayCode,
+    bankAccountNumber: user.bankAccountNumber,
+    sepayLinkedAt: user.sepayLinkedAt,
     avatarUrl: user.avatarUrl,
     balance: user.balance,
   }

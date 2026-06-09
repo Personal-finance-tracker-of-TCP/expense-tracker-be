@@ -64,8 +64,12 @@ async function seedUsers() {
       passwordHash,
       role: "ADMIN",
       balance: 0,
+
+      // Admin có thể giữ mã demo riêng, không dùng cho user test Bank Link.
       sepayCode: "MTA001",
-      bankAccountNumber: "970400000000",
+      sepayLinkedAt: new Date(),
+      bankAccountNumber: null,
+
       provider: "local",
     },
     create: {
@@ -74,8 +78,11 @@ async function seedUsers() {
       passwordHash,
       role: "ADMIN",
       balance: 0,
+
       sepayCode: "MTA001",
-      bankAccountNumber: "970400000000",
+      sepayLinkedAt: new Date(),
+      bankAccountNumber: null,
+
       provider: "local",
     },
   });
@@ -87,11 +94,18 @@ async function seedUsers() {
       passwordHash,
       role: "USER",
 
-      // 8,000,000 income - 100,000 expense - 750,000 SePay expense
-      balance: 7150000,
+      // 8,000,000 income - 100,000 expense = 7,900,000
+      // SePay transaction sẽ được tạo bằng webhook thật/simulator sau khi user liên kết ngân hàng.
+      balance: 7900000,
 
-      sepayCode: "MTU001",
-      bankAccountNumber: "970400000001",
+      // Quan trọng:
+      // null thật, không phải chuỗi "null".
+      // Để user demo chưa liên kết ngân hàng.
+      // Khi bấm POST /api/bank-link, backend sẽ tự sinh sepayCode mới.
+      sepayCode: null,
+      sepayLinkedAt: null,
+      bankAccountNumber: null,
+
       provider: "local",
     },
     create: {
@@ -100,11 +114,12 @@ async function seedUsers() {
       passwordHash,
       role: "USER",
 
-      // 8,000,000 income - 100,000 expense - 750,000 SePay expense
-      balance: 7150000,
+      balance: 7900000,
 
-      sepayCode: "MTU001",
-      bankAccountNumber: "970400000001",
+      sepayCode: null,
+      sepayLinkedAt: null,
+      bankAccountNumber: null,
+
       provider: "local",
     },
   });
@@ -205,75 +220,6 @@ async function seedManualTransactions(user, foodCategory, salaryCategory) {
   console.log("Seeded manual transactions ✓");
 }
 
-async function seedSepayDemoTransaction(user) {
-  const sepayId = "SEPAY-DEMO-001";
-
-  let sepayTransaction = await prisma.transaction.findUnique({
-    where: { sepayId },
-  });
-
-  if (!sepayTransaction) {
-    sepayTransaction = await prisma.transaction.create({
-      data: {
-        userId: user.id,
-
-        // null để demo luồng SePay mới về nhưng chưa phân loại
-        categoryId: null,
-
-        type: "EXPENSE",
-        amount: 750000,
-        note: "SEPAY DEMO MTU001 - giao dịch lớn chờ phân loại",
-        transactionDate: new Date("2026-06-05T14:30:00.000Z"),
-        source: "SEPAY",
-        sepayId,
-      },
-    });
-  }
-
-  await prisma.sepayLog.upsert({
-    where: { sepayId },
-    update: {
-      gateway: "SEPAY",
-      transferAmount: 750000,
-      transferType: "OUT",
-      content: "SEPAY DEMO MTU001 - giao dịch lớn chờ phân loại",
-      transactionDate: new Date("2026-06-05T14:30:00.000Z"),
-      matchedCode: "MTU001",
-      status: "PROCESSED",
-      processed: true,
-      transactionId: sepayTransaction.id,
-      rawPayload: {
-        sepayId,
-        gateway: "SEPAY",
-        amount: 750000,
-        transferType: "OUT",
-        content: "SEPAY DEMO MTU001 - giao dịch lớn chờ phân loại",
-      },
-    },
-    create: {
-      sepayId,
-      gateway: "SEPAY",
-      transferAmount: 750000,
-      transferType: "OUT",
-      content: "SEPAY DEMO MTU001 - giao dịch lớn chờ phân loại",
-      transactionDate: new Date("2026-06-05T14:30:00.000Z"),
-      matchedCode: "MTU001",
-      status: "PROCESSED",
-      processed: true,
-      transactionId: sepayTransaction.id,
-      rawPayload: {
-        sepayId,
-        gateway: "SEPAY",
-        amount: 750000,
-        transferType: "OUT",
-        content: "SEPAY DEMO MTU001 - giao dịch lớn chờ phân loại",
-      },
-    },
-  });
-
-  console.log("Seeded SePay demo transaction and log ✓");
-}
-
 async function seedAiAdviceLog(user) {
   const existed = await prisma.aiAdviceLog.findFirst({
     where: {
@@ -290,17 +236,17 @@ async function seedAiAdviceLog(user) {
         inputHash: "demo-month-2026-06",
         inputSummary: {
           totalIncome: 8000000,
-          totalExpense: 850000,
-          saving: 7150000,
+          totalExpense: 100000,
+          saving: 7900000,
           topExpenseCategories: [
             { name: "Ăn uống", amount: 100000 },
-            { name: "Chưa phân loại", amount: 750000 },
           ],
+          uncategorizedSepayCount: 0,
         },
         result: {
           summary: "Bạn đang tiết kiệm tốt trong tháng 6.",
           suggestions: [
-            "Phân loại giao dịch SePay 750.000đ để báo cáo chính xác hơn.",
+            "Liên kết ngân hàng để MoneyTrack tự động ghi nhận giao dịch chuyển khoản.",
             "Tiếp tục giữ chi tiêu ăn uống dưới 1.000.000đ.",
           ],
         },
@@ -347,7 +293,11 @@ async function main() {
 
   await seedDemoBudget(user, foodCategory);
   await seedManualTransactions(user, foodCategory, salaryCategory);
-  await seedSepayDemoTransaction(user);
+
+  // Không seed SePay demo transaction nữa.
+  // SePay transaction thật/simulator sẽ được tạo sau khi user bấm Bank Link
+  // và webhook gửi giao dịch về backend.
+
   await seedAiAdviceLog(user);
   await seedReportExportLog(user);
 
@@ -356,7 +306,7 @@ async function main() {
   console.log("Demo accounts:");
   console.log(`Admin: admin@moneytrack.local / ${DEFAULT_PASSWORD}`);
   console.log(`User : user@moneytrack.local / ${DEFAULT_PASSWORD}`);
-  console.log(`User SePay Code: MTU001`);
+  console.log("User SePay Code: not linked yet. Click Bank Link to generate one.");
 }
 
 main()
