@@ -29,6 +29,12 @@ adminRoutes.use(authMiddleware)
 adminRoutes.use(requireAdmin)
 
 adminRoutes.post('/sepay-simulator', adminController.simulateSepay)
+adminRoutes.post(
+  '/bankhub-sandbox/transactions',
+  adminController.createBankHubSandboxTransaction
+)
+adminRoutes.get('/platform-statistics', adminController.getPlatformStatistics)
+adminRoutes.post('/notifications', adminController.createNotification)
 adminRoutes.get('/sepay-logs', adminController.getSepayLogs)
 adminRoutes.get('/linked-users', adminController.getLinkedUsers)
 

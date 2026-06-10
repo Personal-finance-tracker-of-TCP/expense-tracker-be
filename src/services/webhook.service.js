@@ -13,17 +13,15 @@ const sepayPayloadSchema = z.object({
   transferAmount: z.coerce
     .number({ message: 'transferAmount phai la so' })
     .positive('transferAmount phai lon hon 0'),
-  transferType: z.preprocess(
-    (value) => (typeof value === 'string' ? value.toUpperCase() : value),
-    z.enum(['IN', 'OUT'], {
-      message: 'transferType phai la IN hoac OUT',
-    })
-  ),
-  content: z.string().trim(),
+  transferType: z.enum(['IN', 'OUT'], {
+    message: 'transferType phai la IN hoac OUT',
+  }),
+  content: z.string().trim().default(''),
+  codeSearchText: z.string().trim().default(''),
   transactionDate: z.coerce.date({
     message: 'transactionDate khong hop le',
   }),
-  accountNumber: z.string().optional(),
+  accountIdentity: z.string().optional(),
   referenceCode: z.string().optional(),
 })
 
@@ -38,36 +36,75 @@ function normalizeOptionalText(value) {
   return text.length > 0 ? text : undefined
 }
 
+function pickFirstText(payload, keys) {
+  for (const key of keys) {
+    const value = normalizeOptionalText(payload?.[key])
+    if (value) return value
+  }
+
+  return undefined
+}
+
 function getStableSepayTransactionId(payload = {}) {
-  const explicitSepayId = normalizeOptionalText(payload.sepayId)
-  if (explicitSepayId) return explicitSepayId
+  return pickFirstText(payload, [
+    'transaction_id',
+    'referenceCode',
+    'reference_code',
+    'sepayId',
+    'id',
+  ])
+}
 
-  const referenceCode = normalizeOptionalText(payload.referenceCode)
-  const id = payload.id === 0 ? '0' : normalizeOptionalText(payload.id)
+function normalizeTransferType(value) {
+  const transferType = normalizeOptionalText(value)?.toLowerCase()
 
-  if (referenceCode && (!id || id === '0')) return referenceCode
-  return id || referenceCode
+  if (transferType === 'credit' || transferType === 'in') return 'IN'
+  if (transferType === 'debit' || transferType === 'out') return 'OUT'
+
+  return undefined
+}
+
+function normalizeTransactionDate(payload = {}) {
+  return (
+    payload.transactionDate ||
+    payload.transaction_date ||
+    payload.transactionDateTime ||
+    payload.created_at ||
+    payload.createdAt ||
+    new Date()
+  )
 }
 
 function normalizeSepayPayload(payload = {}) {
+  const content = normalizeOptionalText(payload.content)
+  const description = normalizeOptionalText(payload.description)
+  const transactionContent = normalizeOptionalText(payload.transaction_content)
+
   return {
     sepayId: getStableSepayTransactionId(payload),
-    transactionDate: payload.transactionDate,
-    accountNumber: normalizeOptionalText(payload.accountNumber),
-    gateway: payload.gateway,
-    transferType: payload.transferType,
-    transferAmount: payload.transferAmount,
-    content:
-      normalizeOptionalText(payload.content) ||
-      normalizeOptionalText(payload.description) ||
-      '',
-    referenceCode: normalizeOptionalText(payload.referenceCode),
+    transactionDate: normalizeTransactionDate(payload),
+    accountIdentity: pickFirstText(payload, [
+      'bank_account_xid',
+      'accountNumber',
+      'account_number',
+      'bank_account_number',
+    ]),
+    gateway:
+      normalizeOptionalText(payload.gateway) ||
+      normalizeOptionalText(payload.bank) ||
+      normalizeOptionalText(payload.bank_name) ||
+      'SePay BankHub Sandbox',
+    transferType: normalizeTransferType(payload.transferType || payload.transfer_type),
+    transferAmount: payload.transferAmount ?? payload.transfer_amount ?? payload.amount,
+    content: content || description || transactionContent || '',
+    codeSearchText: [content, description, transactionContent].filter(Boolean).join(' '),
+    referenceCode: pickFirstText(payload, ['referenceCode', 'reference_code']),
   }
 }
 
-function extractSepayCode(content) {
+function extractSepayCode(text = '') {
   // Support both new MTKXXXXXX and legacy/demo MTUxxx formats.
-  const match = content.match(/\b(MTK[A-Z0-9]{6}|MTU\d+)\b/i)
+  const match = text.match(/\b(MTK[A-Z0-9]{6}|MTU[A-Z0-9]{6}|MTU\d+)\b/i)
   return match ? match[0].toUpperCase() : null
 }
 
@@ -75,6 +112,81 @@ function createServiceError(message, statusCode = 400) {
   const error = new Error(message)
   error.statusCode = statusCode
   return error
+}
+
+async function findMatchedUser(data) {
+  if (data.accountIdentity) {
+    const user = await prisma.user.findFirst({
+      where: {
+        bankAccountNumber: data.accountIdentity,
+      },
+      select: { id: true, sepayCode: true, bankAccountNumber: true },
+    })
+
+    if (user) {
+      return {
+        user,
+        sepayCode: null,
+        matchedCode: user.sepayCode || null,
+        matchType: 'BANK_ACCOUNT',
+      }
+    }
+  }
+
+  const sepayCode = extractSepayCode(data.codeSearchText || data.content)
+
+  if (sepayCode) {
+    const user = await prisma.user.findFirst({
+      where: {
+        sepayCode: {
+          equals: sepayCode,
+          mode: 'insensitive',
+        },
+      },
+      select: { id: true, sepayCode: true, bankAccountNumber: true },
+    })
+
+    if (user) {
+      return {
+        user,
+        sepayCode,
+        matchedCode: sepayCode,
+        matchType: 'SEPAY_CODE',
+      }
+    }
+  }
+
+  return {
+    user: null,
+    sepayCode,
+    matchedCode: sepayCode,
+    matchType: null,
+  }
+}
+
+function getTransactionType(transferType) {
+  return transferType === 'OUT' ? 'EXPENSE' : 'INCOME'
+}
+
+function getBalanceUpdate(transferType, amount) {
+  return transferType === 'OUT' ? { decrement: amount } : { increment: amount }
+}
+
+function getNotificationCopy(transferType, amount, content) {
+  const amountFormatted = Number(amount).toLocaleString('vi-VN')
+  const directionText =
+    transferType === 'OUT'
+      ? `phat sinh giao dich -${amountFormatted}d qua SePay`
+      : `nhan duoc +${amountFormatted}d qua SePay`
+
+  return {
+    title:
+      transferType === 'OUT'
+        ? 'Tu dong ghi nhan chi tien qua SePay'
+        : 'Tu dong nhan tien qua SePay',
+    message: `Tai khoan cua ban da ${directionText} (noi dung giao dich: "${content}").`,
+    type: transferType === 'OUT' ? 'SEPAY_EXPENSE' : 'SEPAY_INCOME',
+  }
 }
 
 async function processSepayWebhook(payload) {
@@ -126,31 +238,7 @@ async function processSepayWebhook(payload) {
     },
   })
 
-  const sepayCode = extractSepayCode(data.content)
-  let matchedCode = sepayCode
-  let user = null
-
-  if (sepayCode) {
-    user = await prisma.user.findFirst({
-      where: {
-        sepayCode: {
-          equals: sepayCode,
-          mode: 'insensitive',
-        },
-      },
-      select: { id: true, sepayCode: true, bankAccountNumber: true },
-    })
-  }
-
-  if (!user && data.accountNumber) {
-    user = await prisma.user.findFirst({
-      where: {
-        bankAccountNumber: data.accountNumber,
-      },
-      select: { id: true, sepayCode: true, bankAccountNumber: true },
-    })
-    matchedCode = matchedCode || user?.sepayCode || null
-  }
+  const { user, sepayCode, matchedCode, matchType } = await findMatchedUser(data)
 
   if (!user) {
     const updatedLog = await prisma.sepayLog.update({
@@ -165,16 +253,20 @@ async function processSepayWebhook(payload) {
 
     return {
       status: 'UNMATCHED',
-      message: sepayCode
-        ? 'Khong tim thay user tu noi dung chuyen khoan'
-        : 'Khong tim thay ma SePay trong noi dung chuyen khoan',
+      message: 'Khong tim thay user tu account identity hoac ma SePay',
       sepayCode,
+      accountIdentity: data.accountIdentity || null,
       log: updatedLog,
     }
   }
 
-  // Always register as INCOME as requested because it is money transferred into the system.
-  const transactionType = 'INCOME'
+  const transactionType = getTransactionType(data.transferType)
+  const notification = getNotificationCopy(
+    data.transferType,
+    data.transferAmount,
+    data.content
+  )
+
   const transaction = await prisma.$transaction(async (tx) => {
     const createdTransaction = await tx.transaction.create({
       data: {
@@ -197,9 +289,7 @@ async function processSepayWebhook(payload) {
     await tx.user.update({
       where: { id: user.id },
       data: {
-        balance: {
-          increment: data.transferAmount,
-        },
+        balance: getBalanceUpdate(data.transferType, data.transferAmount),
       },
     })
 
@@ -213,13 +303,12 @@ async function processSepayWebhook(payload) {
       },
     })
 
-    const amountFormatted = Number(data.transferAmount).toLocaleString('vi-VN')
     await tx.notification.create({
       data: {
         userId: user.id,
-        title: 'Tu dong nhan tien qua SePay',
-        message: `Tai khoan cua ban da nhan duoc +${amountFormatted}d qua SePay (noi dung chuyen khoan: "${data.content}").`,
-        type: 'SEPAY_INCOME',
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
         isRead: false,
       },
     })
@@ -231,6 +320,8 @@ async function processSepayWebhook(payload) {
     status: 'PROCESSED',
     message: 'Xu ly SePay thanh cong',
     sepayCode,
+    accountIdentity: data.accountIdentity || null,
+    matchType,
     logId: log.id,
     transaction,
   }

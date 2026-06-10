@@ -1,60 +1,63 @@
-const prisma = require('../lib/prisma')
+const notificationService = require('../services/notification.service')
 const { sendSuccess, sendError } = require('../utils/response')
 
-async function getNotifications(req, res) {
-  const userId = req.user.userId
+function getStatusCode(error) {
+  return error.statusCode || 500
+}
 
+async function getNotifications(req, res) {
   try {
-    const notifications = await prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    })
+    const notifications = await notificationService.getNotifications(req.user.userId)
     return sendSuccess(res, notifications)
   } catch (error) {
-    console.error('getNotifications error:', error)
+    console.error('getNotifications error:', error.message)
     return sendError(res, 'Lỗi khi lấy danh sách thông báo', 500)
   }
 }
 
 async function readNotification(req, res) {
-  const userId = req.user.userId
-  const { id } = req.params
-
   try {
-    const notification = await prisma.notification.findFirst({
-      where: { id, userId },
-    })
-
-    if (!notification) {
-      return sendError(res, 'Không tìm thấy thông báo', 404)
-    }
-
-    const updated = await prisma.notification.update({
-      where: { id },
-      data: { isRead: true },
-    })
+    const updated = await notificationService.markNotificationRead(
+      req.user.userId,
+      req.params.id
+    )
 
     return sendSuccess(res, updated)
   } catch (error) {
-    console.error('readNotification error:', error)
-    return sendError(res, 'Lỗi khi đánh dấu thông báo đã đọc', 500)
+    console.error('readNotification error:', error.message)
+    return sendError(
+      res,
+      error.message || 'Lỗi khi đánh dấu thông báo đã đọc',
+      getStatusCode(error)
+    )
   }
 }
 
 async function readAllNotifications(req, res) {
-  const userId = req.user.userId
-
   try {
-    await prisma.notification.updateMany({
-      where: { userId, isRead: false },
-      data: { isRead: true },
-    })
-
-    return sendSuccess(res, { message: 'Đã đánh dấu tất cả thông báo là đã đọc' })
+    const result = await notificationService.markAllNotificationsRead(req.user.userId)
+    return sendSuccess(res, result)
   } catch (error) {
-    console.error('readAllNotifications error:', error)
+    console.error('readAllNotifications error:', error.message)
     return sendError(res, 'Lỗi khi đánh dấu tất cả thông báo', 500)
+  }
+}
+
+async function deleteNotification(req, res) {
+  try {
+    const result = await notificationService.deleteNotification(
+      req.user.userId,
+      req.params.id
+    )
+
+    return sendSuccess(res, result)
+  } catch (error) {
+    console.error('deleteNotification error:', error.message)
+    return sendError(
+      res,
+      error.message || 'Lỗi khi xóa thông báo',
+      getStatusCode(error)
+    )
   }
 }
 
@@ -62,4 +65,5 @@ module.exports = {
   getNotifications,
   readNotification,
   readAllNotifications,
+  deleteNotification,
 }

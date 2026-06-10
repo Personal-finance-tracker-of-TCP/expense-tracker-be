@@ -9,5 +9,6 @@ router.use(authMiddleware)
 router.get('/', notificationController.getNotifications)
 router.patch('/read-all', notificationController.readAllNotifications)
 router.patch('/:id/read', notificationController.readNotification)
+router.delete('/:id', notificationController.deleteNotification)
 
 module.exports = router

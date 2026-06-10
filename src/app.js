@@ -39,6 +39,8 @@ const adminRoutes = require('./routes/admin.routes')
 const bankLinkRoutes = require('./routes/bank-link.routes')
 const notificationRoutes = require('./routes/notification.routes')
 const userRoutes = require('./routes/user.routes')
+const feedbackRoutes = require('./routes/feedback.routes')
+const publicRoutes = require('./routes/public.routes')
 
 app.use('/auth', authRoutes)
 
@@ -69,6 +71,8 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/bank-link', bankLinkRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/users', userRoutes)
+app.use('/api/feedback', feedbackRoutes)
+app.use('/api/public', publicRoutes)
 
 app.use(errorHandler)
 
