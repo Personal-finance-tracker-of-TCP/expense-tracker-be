@@ -12,15 +12,33 @@ function toSafeUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    sepayCode: user.sepayCode,
+    bankAccountNumber: user.bankAccountNumber,
+    sepayLinkedAt: user.sepayLinkedAt,
     avatarUrl: user.avatarUrl,
     balance: user.balance,
   }
 }
 
 // Đăng ký tài khoản local mới và cấp access token, refresh token.
+async function generateSepayCode() {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const suffix = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, '0')}`
+    const sepayCode = `MTU${suffix}`
+    const existing = await prisma.user.findUnique({ where: { sepayCode } })
+    if (!existing) return sepayCode
+  }
+
+  throw new Error('Khong the tao ma SePay, vui long thu lai')
+}
+
 async function register(name, email, password) {
+  const normalizedEmail = email.trim().toLowerCase()
+
   const existing = await prisma.user.findUnique({
-    where: { email },
+    where: { email: normalizedEmail },
   })
 
   if (existing) {
@@ -28,12 +46,14 @@ async function register(name, email, password) {
   }
 
   const hashed = await hashPassword(password)
+  const sepayCode = await generateSepayCode()
 
   const user = await prisma.user.create({
     data: {
-      name,
-      email,
+      name: name.trim(),
+      email: normalizedEmail,
       passwordHash: hashed,
+      sepayCode,
       provider: 'local',
     },
   })
@@ -55,8 +75,10 @@ async function register(name, email, password) {
 
 // Đăng nhập bằng email, mật khẩu local và cấp cặp token mới.
 async function login(email, password) {
+  const normalizedEmail = email.trim().toLowerCase()
+
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { email: normalizedEmail },
   })
 
   if (!user) {
