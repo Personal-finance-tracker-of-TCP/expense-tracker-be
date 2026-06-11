@@ -46,6 +46,17 @@ const adminCreateNotificationSchema = z.object({
     .optional(),
 })
 
+const assignBankhubAccountSchema = z.object({
+  bankhubAccountXid: z
+    .string({ message: 'bankhubAccountXid la bat buoc' })
+    .trim()
+    .min(1, 'bankhubAccountXid la bat buoc')
+    .max(128, 'bankhubAccountXid toi da 128 ky tu'),
+  bankAccountNumber: z.string().trim().max(64).optional().nullable(),
+  bankName: z.string().trim().max(64).optional().nullable(),
+  bankAccountName: z.string().trim().max(128).optional().nullable(),
+})
+
 function getStatusCode(error) {
   return error.statusCode || 500
 }
@@ -79,7 +90,7 @@ async function getLinkedUsers(req, res) {
   try {
     const users = await prisma.user.findMany({
       where: {
-        bankAccountNumber: {
+        bankhubAccountXid: {
           not: null,
         },
       },
@@ -88,7 +99,10 @@ async function getLinkedUsers(req, res) {
         name: true,
         email: true,
         sepayCode: true,
+        bankhubAccountXid: true,
         bankAccountNumber: true,
+        bankName: true,
+        bankAccountName: true,
         sepayLinkedAt: true,
         role: true,
       },
@@ -140,6 +154,51 @@ async function createNotification(req, res) {
   }
 }
 
+async function assignBankhubAccount(req, res) {
+  const parsed = assignBankhubAccountSchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    return sendError(
+      res,
+      parsed.error.issues?.[0]?.message || 'Du lieu tai khoan BankHub khong hop le',
+      400
+    )
+  }
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: req.params.userId },
+      data: {
+        bankhubAccountXid: parsed.data.bankhubAccountXid,
+        bankAccountNumber: parsed.data.bankAccountNumber || null,
+        bankName: parsed.data.bankName || null,
+        bankAccountName: parsed.data.bankAccountName || null,
+        sepayLinkedAt: new Date(),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        bankhubAccountXid: true,
+        bankAccountNumber: true,
+        bankName: true,
+        bankAccountName: true,
+        sepayLinkedAt: true,
+      },
+    })
+
+    return sendSuccess(res, updatedUser)
+  } catch (error) {
+    console.error('assignBankhubAccount error:', error.message)
+    return sendError(
+      res,
+      error.code === 'P2025' ? 'Khong tim thay nguoi dung' : error.message,
+      error.code === 'P2025' ? 404 : getStatusCode(error)
+    )
+  }
+}
+
 async function createBankHubSandboxTransaction(req, res) {
   const parsed = bankHubSandboxTransactionSchema.safeParse(req.body)
 
@@ -156,6 +215,7 @@ async function createBankHubSandboxTransaction(req, res) {
       where: { id: parsed.data.userId },
       select: {
         id: true,
+        bankhubAccountXid: true,
         bankAccountNumber: true,
       },
     })
@@ -164,12 +224,12 @@ async function createBankHubSandboxTransaction(req, res) {
       return sendError(res, 'Khong tim thay nguoi dung', 404)
     }
 
-    if (!user.bankAccountNumber) {
+    if (!user.bankhubAccountXid) {
       return sendError(res, 'User chưa liên kết BankHub Sandbox', 400)
     }
 
     const bankHubResponse = await bankHubService.createMockTransaction({
-      bankAccountXid: user.bankAccountNumber,
+      bankAccountXid: user.bankhubAccountXid,
       transferType: parsed.data.transferType,
       amount: parsed.data.amount,
       content: parsed.data.content,
@@ -196,5 +256,6 @@ module.exports = {
   getLinkedUsers,
   getPlatformStatistics,
   createNotification,
+  assignBankhubAccount,
   createBankHubSandboxTransaction,
 }

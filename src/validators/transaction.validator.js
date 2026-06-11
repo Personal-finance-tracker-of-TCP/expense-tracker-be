@@ -23,6 +23,14 @@ const createTransactionSchema = z.object({
 
 const updateTransactionSchema = createTransactionSchema.partial()
 
+const classifyTransactionSchema = z.object({
+  categoryId: z
+    .string({ message: 'Vui long chon danh muc' })
+    .trim()
+    .min(1, 'Vui long chon danh muc'),
+  note: z.string().max(255, 'Ghi chu khong duoc vuot qua 255 ky tu').optional(),
+})
+
 const getTransactionsQuerySchema = z.object({
   month: z.coerce
     .number({ message: 'Tháng không hợp lệ' })
@@ -39,6 +47,9 @@ const getTransactionsQuerySchema = z.object({
     message: 'Loại giao dịch phải là INCOME hoặc EXPENSE'
   }).optional(),
   categoryId: z.string().optional(),
+  classificationStatus: z.enum(['UNCLASSIFIED', 'CLASSIFIED', 'EXCLUDED'], {
+    message: 'Trang thai phan loai khong hop le'
+  }).optional(),
   search: z.string().optional(),
   page: z.coerce
     .number({ message: 'Trang không hợp lệ' })
@@ -56,5 +67,6 @@ const getTransactionsQuerySchema = z.object({
 module.exports = {
   createTransactionSchema,
   updateTransactionSchema,
+  classifyTransactionSchema,
   getTransactionsQuerySchema,
 }

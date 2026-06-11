@@ -1,0 +1,1 @@
+ALTER TABLE "SepayLog" ALTER COLUMN "matchedCode" TYPE VARCHAR(128);

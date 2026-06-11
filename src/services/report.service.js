@@ -1,5 +1,7 @@
 const prisma = require('../lib/prisma')
 
+const classifiedWhere = { classificationStatus: 'CLASSIFIED' }
+
 // Helper: xác định khoảng thời gian từ query
 const getDateRange = (query) => {
   const { from, to, month, year } = query
@@ -25,7 +27,7 @@ const getSummary = async (userId, query) => {
   const dateRange = getDateRange(query)
 
   const transactions = await prisma.transaction.findMany({
-    where: { userId, transactionDate: dateRange },
+    where: { userId, transactionDate: dateRange, ...classifiedWhere },
     select: { type: true, amount: true }
   })
 
@@ -66,7 +68,7 @@ const getChartData = async (userId, query) => {
       }
 
       const transactions = await prisma.transaction.findMany({
-        where: { userId, transactionDate: dateRange },
+        where: { userId, transactionDate: dateRange, ...classifiedWhere },
         select: { type: true, amount: true }
       })
 
@@ -86,7 +88,12 @@ const getChartData = async (userId, query) => {
   const dateRange = getDateRange(query)
   const categoryBreakdown = await prisma.transaction.groupBy({
     by: ['categoryId'],
-    where: { userId, type: 'EXPENSE', transactionDate: dateRange },
+    where: {
+      userId,
+      type: 'EXPENSE',
+      transactionDate: dateRange,
+      ...classifiedWhere,
+    },
     _sum: { amount: true },
     orderBy: { _sum: { amount: 'desc' } },
     take: 5
@@ -121,7 +128,7 @@ const getExportData = async (userId, query) => {
   const dateRange = getDateRange(query)
 
   const transactions = await prisma.transaction.findMany({
-    where: { userId, transactionDate: dateRange },
+    where: { userId, transactionDate: dateRange, ...classifiedWhere },
     include: { category: { select: { name: true, icon: true } } },
     orderBy: { transactionDate: 'desc' }
   })

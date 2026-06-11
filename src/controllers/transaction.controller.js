@@ -3,6 +3,7 @@ const { sendSuccess, sendError } = require('../utils/response')
 const {
   createTransactionSchema,
   updateTransactionSchema,
+  classifyTransactionSchema,
   getTransactionsQuerySchema
 } = require('../validators/transaction.validator')
 
@@ -82,10 +83,46 @@ async function deleteTransaction(req, res) {
   }
 }
 
+async function excludeTransaction(req, res) {
+  try {
+    const transaction = await transactionService.excludeTransaction(
+      req.user.userId,
+      req.params.id
+    )
+    if (!transaction) return sendError(res, 'Khong tim thay giao dich hoac khong co quyen', 403)
+    return sendSuccess(res, transaction)
+  } catch (err) {
+    console.error('excludeTransaction error:', err)
+    return sendError(res, err.message || 'Loi khi bo qua giao dich', err.statusCode || 500)
+  }
+}
+
+async function classifyTransaction(req, res) {
+  try {
+    const parsed = classifyTransactionSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return sendError(res, getValidationMessage(parsed.error), 400)
+    }
+
+    const transaction = await transactionService.classifyTransaction(
+      req.user.userId,
+      req.params.id,
+      parsed.data
+    )
+    if (!transaction) return sendError(res, 'Khong tim thay giao dich hoac khong co quyen', 403)
+    return sendSuccess(res, transaction)
+  } catch (err) {
+    console.error('classifyTransaction error:', err)
+    return sendError(res, err.message || 'Loi khi phan loai giao dich', err.statusCode || 500)
+  }
+}
+
 module.exports = {
   getTransactions,
   getTransactionById,
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  excludeTransaction,
+  classifyTransaction,
 }

@@ -103,8 +103,11 @@ async function seedUsers() {
       // Để user demo chưa liên kết ngân hàng.
       // Khi bấm POST /api/bank-link, backend sẽ tự sinh sepayCode mới.
       sepayCode: null,
-      sepayLinkedAt: null,
-      bankAccountNumber: null,
+      sepayLinkedAt: new Date(),
+      bankhubAccountXid: "5030270a-64e2-11f1-b21a-a6006ab65aca",
+      bankAccountNumber: "0011223344",
+      bankName: "VietinBank",
+      bankAccountName: "NGUYEN VAN M",
 
       provider: "local",
     },
@@ -117,8 +120,11 @@ async function seedUsers() {
       balance: 7900000,
 
       sepayCode: null,
-      sepayLinkedAt: null,
-      bankAccountNumber: null,
+      sepayLinkedAt: new Date(),
+      bankhubAccountXid: "5030270a-64e2-11f1-b21a-a6006ab65aca",
+      bankAccountNumber: "0011223344",
+      bankName: "VietinBank",
+      bankAccountName: "NGUYEN VAN M",
 
       provider: "local",
     },
@@ -191,6 +197,7 @@ async function seedManualTransactions(user, foodCategory, salaryCategory) {
         note: "Lương tháng 6",
         transactionDate: new Date("2026-06-01T09:00:00.000Z"),
         source: "MANUAL",
+        classificationStatus: "CLASSIFIED",
       },
     });
   }
@@ -213,6 +220,7 @@ async function seedManualTransactions(user, foodCategory, salaryCategory) {
         note: "Ăn trưa demo",
         transactionDate: new Date("2026-06-03T10:00:00.000Z"),
         source: "MANUAL",
+        classificationStatus: "CLASSIFIED",
       },
     });
   }
@@ -306,7 +314,7 @@ async function main() {
   console.log("Demo accounts:");
   console.log(`Admin: admin@moneytrack.local / ${DEFAULT_PASSWORD}`);
   console.log(`User : user@moneytrack.local / ${DEFAULT_PASSWORD}`);
-  console.log("User SePay Code: not linked yet. Click Bank Link to generate one.");
+  console.log("User BankHub Sandbox: VietinBank / 0011223344 / 5030270a-64e2-11f1-b21a-a6006ab65aca");
 }
 
 main()
