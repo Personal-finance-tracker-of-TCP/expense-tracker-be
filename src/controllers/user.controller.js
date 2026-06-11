@@ -1,11 +1,21 @@
 const { z } = require('zod')
 const prisma = require('../lib/prisma')
 const { sendSuccess, sendError } = require('../utils/response')
+const { changePassword } = require('../services/user.service')
 
 const updateBalanceSchema = z.object({
   balance: z.coerce
     .number({ message: 'So du phai la so' })
     .min(0, 'So du phai lon hon hoac bang 0'),
+})
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Vui lòng nhập mật khẩu hiện tại'),
+  newPassword: z.string().min(8, 'Mật khẩu mới phải có ít nhất 8 ký tự'),
+  confirmNewPassword: z.string().min(1, 'Vui lòng xác nhận mật khẩu mới'),
+}).refine((data) => data.newPassword === data.confirmNewPassword, {
+  message: 'Mật khẩu xác nhận không khớp',
+  path: ['confirmNewPassword'],
 })
 
 function generateSandboxAccountNumber() {
@@ -212,7 +222,32 @@ async function updateMySepaySandboxLink(req, res) {
   }
 }
 
+async function changeMyPassword(req, res) {
+  const parsed = changePasswordSchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    return sendError(
+      res,
+      parsed.error.issues?.[0]?.message || 'Du lieu doi mat khau khong hop le',
+      400
+    )
+  }
+
+  try {
+    const result = await changePassword(
+      req.user.userId,
+      parsed.data.currentPassword,
+      parsed.data.newPassword
+    )
+
+    return sendSuccess(res, result)
+  } catch (error) {
+    return sendError(res, error.message, 400)
+  }
+}
+
 module.exports = {
   updateMyBalance,
   updateMySepaySandboxLink,
+  changeMyPassword,
 }

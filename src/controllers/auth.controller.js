@@ -4,6 +4,8 @@ const {
   login: loginService,
   refresh: refreshService,
   logout: logoutService,
+  requestPasswordReset,
+  resetPassword,
 } = require('../services/auth.service')
 const { sendSuccess, sendError } = require('../utils/response')
 
@@ -17,6 +19,10 @@ function normalizeEmail(value) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function isValidOtp(value) {
+  return /^\d{6}$/.test(value)
 }
 
 // Xu ly dang ky tai khoan local bang name, email, password.
@@ -145,10 +151,73 @@ async function getMeController(req, res) {
   }
 }
 
+async function forgotPasswordController(req, res) {
+  const email = normalizeEmail(req.body?.email)
+
+  if (!email) {
+    return sendError(res, 'Vui lòng nhập email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email không hợp lệ')
+  }
+
+  try {
+    const result = await requestPasswordReset(email)
+    return sendSuccess(res, result)
+  } catch (error) {
+    return sendError(res, error.message, 500)
+  }
+}
+
+async function resetPasswordController(req, res) {
+  const email = normalizeEmail(req.body?.email)
+  const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : ''
+  const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : ''
+  const confirmNewPassword = typeof req.body?.confirmNewPassword === 'string' ? req.body.confirmNewPassword : ''
+
+  if (!email) {
+    return sendError(res, 'Vui lòng nhập email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email không hợp lệ')
+  }
+
+  if (!otp) {
+    return sendError(res, 'Vui lòng nhập mã OTP')
+  }
+
+  if (!isValidOtp(otp)) {
+    return sendError(res, 'Mã OTP phải gồm 6 chữ số')
+  }
+
+  if (!newPassword) {
+    return sendError(res, 'Vui lòng nhập mật khẩu mới')
+  }
+
+  if (newPassword.length < 8) {
+    return sendError(res, 'Mật khẩu mới phải có ít nhất 8 ký tự')
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    return sendError(res, 'Mật khẩu xác nhận không khớp')
+  }
+
+  try {
+    const result = await resetPassword(email, otp, newPassword)
+    return sendSuccess(res, result)
+  } catch (error) {
+    return sendError(res, error.message, 400)
+  }
+}
+
 module.exports = {
   registerController,
   loginController,
   refreshTokenController,
   logoutUserController,
   getMeController,
+  forgotPasswordController,
+  resetPasswordController,
 }

@@ -5,6 +5,11 @@ const {
   verifyRefreshToken,
 } = require('../utils/jwt')
 const { hashPassword, comparePassword } = require('../utils/password')
+const {
+  createPasswordResetToken,
+  updatePasswordWithResetToken,
+} = require('./password-reset.service')
+const { sendPasswordResetOtpEmail } = require('./email.service')
 
 function toSafeUser(user) {
   return {
@@ -151,9 +156,48 @@ async function logout(userId) {
   })
 }
 
+async function requestPasswordReset(email) {
+  const normalizedEmail = email.trim().toLowerCase()
+
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  })
+
+  if (!user || !user.passwordHash) {
+    return {
+      message:
+        'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi mã OTP đặt lại mật khẩu.',
+    }
+  }
+
+  const { otp, expiresAt } = await createPasswordResetToken(user)
+
+  await sendPasswordResetOtpEmail({
+    to: user.email,
+    name: user.name,
+    otp,
+  })
+
+  return {
+    message:
+      'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi mã OTP đặt lại mật khẩu.',
+    expiresAt,
+  }
+}
+
+async function resetPassword(email, otp, newPassword) {
+  await updatePasswordWithResetToken({ email, otp, newPassword })
+
+  return {
+    message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.',
+  }
+}
+
 module.exports = {
   register,
   login,
   refresh,
   logout,
+  requestPasswordReset,
+  resetPassword,
 }
