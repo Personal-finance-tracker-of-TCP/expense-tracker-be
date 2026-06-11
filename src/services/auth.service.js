@@ -61,7 +61,7 @@ async function register(name, email, password) {
     },
   })
 
-  const accessToken = generateAccessToken(user.id)
+  const accessToken = generateAccessToken(user.id, user.role)
   const refreshToken = generateRefreshToken(user.id)
 
   await prisma.user.update({
@@ -98,7 +98,7 @@ async function login(email, password) {
     throw new Error('Email hoặc mật khẩu không đúng')
   }
 
-  const accessToken = generateAccessToken(user.id)
+  const accessToken = generateAccessToken(user.id, user.role)
   const refreshToken = generateRefreshToken(user.id)
 
   await prisma.user.update({
@@ -129,7 +129,7 @@ async function refresh(token) {
     throw new Error('Refresh token không hợp lệ')
   }
 
-  const newAccessToken = generateAccessToken(user.id)
+  const newAccessToken = generateAccessToken(user.id, user.role)
   const newRefreshToken = generateRefreshToken(user.id)
 
   await prisma.user.update({

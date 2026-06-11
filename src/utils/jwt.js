@@ -1,8 +1,8 @@
 const jwt = require('jsonwebtoken')
 
 // Tạo access token ngắn hạn để xác thực các request API.
-function generateAccessToken(userId) {
-  return jwt.sign({ userId }, process.env.JWT_ACCESS_SECRET, {
+function generateAccessToken(userId, role) {
+  return jwt.sign({ userId, role }, process.env.JWT_ACCESS_SECRET, {
     expiresIn: '15m',
   })
 }
