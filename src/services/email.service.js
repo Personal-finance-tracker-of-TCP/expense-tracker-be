@@ -2,6 +2,24 @@ const sgMail = require('@sendgrid/mail')
 
 let isConfigured = false
 
+function formatSendGridError(error) {
+  const statusCode = error?.response?.statusCode || error?.code
+
+  if (statusCode === 403 || statusCode === '403') {
+    return 'SendGrid trả về 403 Forbidden. Hãy kiểm tra SENDGRID_FROM_EMAIL đã được verify trong SendGrid hoặc domain authentication đã được cấu hình đúng.'
+  }
+
+  const sendGridErrors = error?.response?.body?.errors
+  if (Array.isArray(sendGridErrors) && sendGridErrors.length > 0) {
+    const firstError = sendGridErrors[0]
+    if (firstError?.message) {
+      return `SendGrid lỗi: ${firstError.message}`
+    }
+  }
+
+  return error?.message || 'Không thể gửi email đặt lại mật khẩu'
+}
+
 function getSendGridConfig() {
   const apiKey = process.env.SENDGRID_API_KEY
   const fromEmail = process.env.SENDGRID_FROM_EMAIL
@@ -44,13 +62,17 @@ async function sendPasswordResetOtpEmail({ to, name, otp, expiresInMinutes = 10 
   const { fromEmail } = getSendGridConfig()
   const appName = process.env.APP_NAME || 'MoneyTrack'
 
-  await sgMail.send({
-    to,
-    from: fromEmail,
-    subject: `${appName} - Mã OTP đặt lại mật khẩu`,
-    text: `Mã OTP của bạn là ${otp}. Mã này hết hạn sau ${expiresInMinutes} phút.`,
-    html: createPasswordResetEmailHtml({ name, otp, expiresInMinutes, appName }),
-  })
+  try {
+    await sgMail.send({
+      to,
+      from: fromEmail,
+      subject: `${appName} - Mã OTP đặt lại mật khẩu`,
+      text: `Mã OTP của bạn là ${otp}. Mã này hết hạn sau ${expiresInMinutes} phút.`,
+      html: createPasswordResetEmailHtml({ name, otp, expiresInMinutes, appName }),
+    })
+  } catch (error) {
+    throw new Error(formatSendGridError(error))
+  }
 }
 
 module.exports = {
