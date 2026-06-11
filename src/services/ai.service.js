@@ -35,6 +35,7 @@ async function getFinancialSummary(userId, input = {}) {
         gte: dateRange.gte,
         lt: dateRange.lt,
       },
+      classificationStatus: 'CLASSIFIED',
     },
     include: {
       category: {
@@ -79,6 +80,40 @@ async function getFinancialSummary(userId, input = {}) {
     }))
 
   const savings = totalIncome - totalExpense
+  const [unclassifiedTransactionCount, sepayTransactionCount, manualTransactionCount] = await Promise.all([
+    prisma.transaction.count({
+      where: {
+        userId,
+        classificationStatus: 'UNCLASSIFIED',
+        transactionDate: {
+          gte: dateRange.gte,
+          lt: dateRange.lt,
+        },
+      },
+    }),
+    prisma.transaction.count({
+      where: {
+        userId,
+        source: 'SEPAY',
+        classificationStatus: 'CLASSIFIED',
+        transactionDate: {
+          gte: dateRange.gte,
+          lt: dateRange.lt,
+        },
+      },
+    }),
+    prisma.transaction.count({
+      where: {
+        userId,
+        source: 'MANUAL',
+        classificationStatus: 'CLASSIFIED',
+        transactionDate: {
+          gte: dateRange.gte,
+          lt: dateRange.lt,
+        },
+      },
+    }),
+  ])
 
   return {
     period: dateRange.label,
@@ -90,9 +125,9 @@ async function getFinancialSummary(userId, input = {}) {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5),
     overBudgetCategories,
-    unclassifiedTransactionCount: transactions.filter((transaction) => !transaction.categoryId).length,
-    sepayTransactionCount: transactions.filter((transaction) => transaction.source === 'SEPAY').length,
-    manualTransactionCount: transactions.filter((transaction) => transaction.source === 'MANUAL').length,
+    unclassifiedTransactionCount,
+    sepayTransactionCount,
+    manualTransactionCount,
   }
 }
 

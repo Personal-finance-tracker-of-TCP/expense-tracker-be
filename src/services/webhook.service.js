@@ -21,8 +21,28 @@ const sepayPayloadSchema = z.object({
   transactionDate: z.coerce.date({
     message: 'transactionDate khong hop le',
   }),
-  accountIdentity: z.string().optional(),
+  accountXid: z.string().optional(),
+  accountNumber: z.string().optional(),
   referenceCode: z.string().optional(),
+})
+
+const sepayBankhubPayloadSchema = z.object({
+  transactionId: z
+    .string({ message: 'transaction_id la bat buoc' })
+    .trim()
+    .min(1, 'transaction_id la bat buoc'),
+  gateway: z.string().trim().default('SePay BankHub'),
+  transactionDate: z.date({ message: 'transaction_date khong hop le' }),
+  accountNumber: z.string().trim().optional(),
+  bankAccountXid: z.string().trim().optional(),
+  transferType: z.enum(['credit', 'debit'], {
+    message: 'transfer_type chi nhan credit hoac debit',
+  }),
+  amount: z.coerce
+    .number({ message: 'amount phai la so' })
+    .positive('amount phai lon hon 0'),
+  content: z.string().trim().optional(),
+  referenceCode: z.string().trim().optional(),
 })
 
 function getValidationMessage(error) {
@@ -75,6 +95,24 @@ function normalizeTransactionDate(payload = {}) {
   )
 }
 
+function parseBankhubTransactionDate(value) {
+  if (!value) return new Date()
+
+  if (value instanceof Date) return value
+
+  const text = String(value).trim()
+  const vnDateTimeMatch = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/
+  )
+
+  if (vnDateTimeMatch) {
+    return new Date(`${vnDateTimeMatch[1]}-${vnDateTimeMatch[2]}-${vnDateTimeMatch[3]}T${vnDateTimeMatch[4]}:${vnDateTimeMatch[5]}:${vnDateTimeMatch[6]}+07:00`)
+  }
+
+  const parsed = new Date(text)
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed
+}
+
 function normalizeSepayPayload(payload = {}) {
   const content = normalizeOptionalText(payload.content)
   const description = normalizeOptionalText(payload.description)
@@ -83,8 +121,14 @@ function normalizeSepayPayload(payload = {}) {
   return {
     sepayId: getStableSepayTransactionId(payload),
     transactionDate: normalizeTransactionDate(payload),
-    accountIdentity: pickFirstText(payload, [
+    accountXid: pickFirstText(payload, [
       'bank_account_xid',
+      'bankhubAccountXid',
+      'bankHubAccountXid',
+      'account_xid',
+      'xid',
+    ]),
+    accountNumber: pickFirstText(payload, [
       'accountNumber',
       'account_number',
       'bank_account_number',
@@ -102,6 +146,30 @@ function normalizeSepayPayload(payload = {}) {
   }
 }
 
+function normalizeSepayBankhubPayload(payload = {}) {
+  return {
+    transactionId: pickFirstText(payload, ['transaction_id']),
+    gateway: normalizeOptionalText(payload.gateway) || 'SePay BankHub',
+    transactionDate: parseBankhubTransactionDate(
+      payload.transaction_date || payload.transactionDate
+    ),
+    accountNumber: pickFirstText(payload, [
+      'account_number',
+      'accountNumber',
+      'bank_account_number',
+    ]),
+    bankAccountXid: pickFirstText(payload, [
+      'bank_account_xid',
+      'bankhubAccountXid',
+      'bankHubAccountXid',
+    ]),
+    transferType: normalizeOptionalText(payload.transfer_type || payload.transferType)?.toLowerCase(),
+    amount: payload.amount,
+    content: normalizeOptionalText(payload.content),
+    referenceCode: pickFirstText(payload, ['reference_code', 'referenceCode']),
+  }
+}
+
 function extractSepayCode(text = '') {
   // Support both new MTKXXXXXX and legacy/demo MTUxxx formats.
   const match = text.match(/\b(MTK[A-Z0-9]{6}|MTU[A-Z0-9]{6}|MTU\d+)\b/i)
@@ -114,21 +182,47 @@ function createServiceError(message, statusCode = 400) {
   return error
 }
 
+function getBankhubTransferType(transferType) {
+  return transferType === 'debit' ? 'OUT' : 'IN'
+}
+
+function getBankhubTransactionType(transferType) {
+  return transferType === 'debit' ? 'EXPENSE' : 'INCOME'
+}
+
 async function findMatchedUser(data) {
-  if (data.accountIdentity) {
+  if (data.accountXid) {
     const user = await prisma.user.findFirst({
       where: {
-        bankAccountNumber: data.accountIdentity,
+        bankhubAccountXid: data.accountXid,
       },
-      select: { id: true, sepayCode: true, bankAccountNumber: true },
+      select: { id: true, sepayCode: true, bankhubAccountXid: true, bankAccountNumber: true },
     })
 
     if (user) {
       return {
         user,
         sepayCode: null,
-        matchedCode: user.sepayCode || null,
-        matchType: 'BANK_ACCOUNT',
+        matchedCode: user.bankhubAccountXid || null,
+        matchType: 'BANKHUB_XID',
+      }
+    }
+  }
+
+  if (data.accountNumber) {
+    const user = await prisma.user.findFirst({
+      where: {
+        bankAccountNumber: data.accountNumber,
+      },
+      select: { id: true, sepayCode: true, bankhubAccountXid: true, bankAccountNumber: true },
+    })
+
+    if (user) {
+      return {
+        user,
+        sepayCode: null,
+        matchedCode: user.bankAccountNumber || null,
+        matchType: 'BANK_ACCOUNT_NUMBER',
       }
     }
   }
@@ -143,7 +237,7 @@ async function findMatchedUser(data) {
           mode: 'insensitive',
         },
       },
-      select: { id: true, sepayCode: true, bankAccountNumber: true },
+      select: { id: true, sepayCode: true, bankhubAccountXid: true, bankAccountNumber: true },
     })
 
     if (user) {
@@ -159,7 +253,74 @@ async function findMatchedUser(data) {
   return {
     user: null,
     sepayCode,
-    matchedCode: sepayCode,
+    matchedCode: data.accountXid || data.accountNumber || sepayCode || null,
+    matchType: null,
+  }
+}
+
+async function findBankhubIpnUser(data) {
+  if (data.bankAccountXid && prisma.bankConnection?.findFirst) {
+    try {
+      const bankConnection = await prisma.bankConnection.findFirst({
+        where: { externalId: data.bankAccountXid },
+      })
+
+      if (bankConnection?.userId) {
+        const user = await prisma.user.findUnique({
+          where: { id: bankConnection.userId },
+          select: {
+            id: true,
+            bankhubAccountXid: true,
+            bankAccountNumber: true,
+          },
+        })
+
+        if (user) {
+          return {
+            user,
+            matchedCode: data.bankAccountXid,
+            matchType: 'BANK_CONNECTION',
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('findBankhubIpnUser BankConnection lookup skipped:', error.message)
+    }
+  }
+
+  if (data.bankAccountXid) {
+    const user = await prisma.user.findFirst({
+      where: { bankhubAccountXid: data.bankAccountXid },
+      select: { id: true, bankhubAccountXid: true, bankAccountNumber: true },
+    })
+
+    if (user) {
+      return {
+        user,
+        matchedCode: data.bankAccountXid,
+        matchType: 'USER_BANKHUB_XID',
+      }
+    }
+  }
+
+  if (data.accountNumber) {
+    const user = await prisma.user.findFirst({
+      where: { bankAccountNumber: data.accountNumber },
+      select: { id: true, bankhubAccountXid: true, bankAccountNumber: true },
+    })
+
+    if (user) {
+      return {
+        user,
+        matchedCode: data.accountNumber,
+        matchType: 'USER_BANK_ACCOUNT_NUMBER',
+      }
+    }
+  }
+
+  return {
+    user: null,
+    matchedCode: data.bankAccountXid || data.accountNumber || null,
     matchType: null,
   }
 }
@@ -184,8 +345,161 @@ function getNotificationCopy(transferType, amount, content) {
       transferType === 'OUT'
         ? 'Tu dong ghi nhan chi tien qua SePay'
         : 'Tu dong nhan tien qua SePay',
-    message: `Tai khoan cua ban da ${directionText} (noi dung giao dich: "${content}").`,
+    message: `Tai khoan cua ban da ${directionText} (noi dung giao dich: "${content}"). Giao dich dang cho ban phan loai trong danh sach giao dich.`,
     type: transferType === 'OUT' ? 'SEPAY_EXPENSE' : 'SEPAY_INCOME',
+  }
+}
+
+async function upsertBankhubWebhookLog(data, payload, status = 'PENDING') {
+  const transferType = getBankhubTransferType(data.transferType)
+  const content = data.content || data.referenceCode || ''
+
+  return prisma.sepayLog.upsert({
+    where: { sepayId: data.transactionId },
+    update: {
+      gateway: data.gateway,
+      transferAmount: data.amount,
+      transferType,
+      content,
+      transactionDate: data.transactionDate,
+      rawPayload: payload || {},
+      status,
+      processed: status === 'PROCESSED',
+      errorReason: null,
+      matchedCode: data.bankAccountXid || data.accountNumber || null,
+    },
+    create: {
+      sepayId: data.transactionId,
+      gateway: data.gateway,
+      transferAmount: data.amount,
+      transferType,
+      content,
+      transactionDate: data.transactionDate,
+      rawPayload: payload || {},
+      status,
+      processed: status === 'PROCESSED',
+      matchedCode: data.bankAccountXid || data.accountNumber || null,
+    },
+  })
+}
+
+async function processSepayBankhubWebhook(payload) {
+  const normalizedPayload = normalizeSepayBankhubPayload(payload)
+  const parsed = sepayBankhubPayloadSchema.safeParse(normalizedPayload)
+
+  if (!parsed.success) {
+    throw createServiceError(getValidationMessage(parsed.error), 400)
+  }
+
+  const data = parsed.data
+  const content = data.content || data.referenceCode || ''
+  const transferType = getBankhubTransferType(data.transferType)
+  const transactionType = getBankhubTransactionType(data.transferType)
+
+  const existingTransaction = await prisma.transaction.findUnique({
+    where: { sepayId: data.transactionId },
+    select: {
+      id: true,
+      userId: true,
+      type: true,
+      amount: true,
+      categoryId: true,
+      source: true,
+      sepayId: true,
+    },
+  })
+
+  const log = await upsertBankhubWebhookLog(
+    data,
+    payload,
+    existingTransaction ? 'DUPLICATE' : 'PENDING'
+  )
+
+  if (existingTransaction) {
+    await prisma.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        processed: true,
+        status: 'DUPLICATE',
+        transactionId: log.transactionId || existingTransaction.id,
+      },
+    })
+
+    return {
+      duplicated: true,
+      transaction: existingTransaction,
+    }
+  }
+
+  const { user, matchedCode, matchType } = await findBankhubIpnUser(data)
+
+  if (!user) {
+    await prisma.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        processed: false,
+        status: 'UNMATCHED',
+        errorReason: 'User mapping not found',
+        matchedCode,
+      },
+    })
+
+    return {
+      message: 'User mapping not found',
+    }
+  }
+
+  const notification = getNotificationCopy(transferType, data.amount, content)
+
+  const transaction = await prisma.$transaction(async (tx) => {
+    const createdTransaction = await tx.transaction.create({
+      data: {
+        userId: user.id,
+        amount: data.amount,
+        type: transactionType,
+        source: 'SEPAY',
+        note: content,
+        transactionDate: data.transactionDate,
+        sepayId: data.transactionId,
+        categoryId: null,
+        classificationStatus: 'UNCLASSIFIED',
+      },
+    })
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        balance: getBalanceUpdate(transferType, data.amount),
+      },
+    })
+
+    await tx.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        processed: true,
+        status: 'PROCESSED',
+        transactionId: createdTransaction.id,
+        matchedCode,
+      },
+    })
+
+    await tx.notification.create({
+      data: {
+        userId: user.id,
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
+        isRead: false,
+      },
+    })
+
+    return createdTransaction
+  })
+
+  return {
+    processed: true,
+    matchType,
+    transaction,
   }
 }
 
@@ -215,7 +529,7 @@ async function processSepayWebhook(payload) {
     },
   })
 
-  if (duplicateLog) {
+  if (duplicateLog?.transactionId || duplicateLog?.status === 'PROCESSED') {
     return {
       status: 'DUPLICATE',
       duplicate: true,
@@ -225,18 +539,33 @@ async function processSepayWebhook(payload) {
     }
   }
 
-  const log = await prisma.sepayLog.create({
-    data: {
-      sepayId: data.sepayId,
-      gateway: data.gateway,
-      transferAmount: data.transferAmount,
-      transferType: data.transferType,
-      content: data.content,
-      transactionDate: data.transactionDate,
-      processed: false,
-      rawPayload: payload || {},
-    },
-  })
+  const log = duplicateLog
+    ? await prisma.sepayLog.update({
+        where: { id: duplicateLog.id },
+        data: {
+          gateway: data.gateway,
+          transferAmount: data.transferAmount,
+          transferType: data.transferType,
+          content: data.content,
+          transactionDate: data.transactionDate,
+          processed: false,
+          status: 'PENDING',
+          errorReason: null,
+          rawPayload: payload || {},
+        },
+      })
+    : await prisma.sepayLog.create({
+        data: {
+          sepayId: data.sepayId,
+          gateway: data.gateway,
+          transferAmount: data.transferAmount,
+          transferType: data.transferType,
+          content: data.content,
+          transactionDate: data.transactionDate,
+          processed: false,
+          rawPayload: payload || {},
+        },
+      })
 
   const { user, sepayCode, matchedCode, matchType } = await findMatchedUser(data)
 
@@ -255,7 +584,8 @@ async function processSepayWebhook(payload) {
       status: 'UNMATCHED',
       message: 'Khong tim thay user tu account identity hoac ma SePay',
       sepayCode,
-      accountIdentity: data.accountIdentity || null,
+      accountXid: data.accountXid || null,
+      accountNumber: data.accountNumber || null,
       log: updatedLog,
     }
   }
@@ -278,6 +608,7 @@ async function processSepayWebhook(payload) {
         sepayId: data.sepayId,
         note: data.content,
         transactionDate: data.transactionDate,
+        classificationStatus: 'UNCLASSIFIED',
       },
       include: {
         category: {
@@ -320,7 +651,8 @@ async function processSepayWebhook(payload) {
     status: 'PROCESSED',
     message: 'Xu ly SePay thanh cong',
     sepayCode,
-    accountIdentity: data.accountIdentity || null,
+    accountXid: data.accountXid || null,
+    accountNumber: data.accountNumber || null,
     matchType,
     logId: log.id,
     transaction,
@@ -366,5 +698,6 @@ async function getSepayLogs(query = {}) {
 
 module.exports = {
   processSepayWebhook,
+  processSepayBankhubWebhook,
   getSepayLogs,
 }

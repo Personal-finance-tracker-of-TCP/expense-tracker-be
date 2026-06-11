@@ -17,7 +17,7 @@ async function getPlatformStatistics() {
     prisma.sepayLog.count({ where: { status: 'FAILED' } }),
     prisma.user.count({
       where: {
-        bankAccountNumber: {
+        bankhubAccountXid: {
           not: null,
         },
       },

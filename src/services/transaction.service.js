@@ -1,12 +1,22 @@
 const prisma = require('../lib/prisma')
 
+const CLASSIFICATION = {
+  UNCLASSIFIED: 'UNCLASSIFIED',
+  CLASSIFIED: 'CLASSIFIED',
+  EXCLUDED: 'EXCLUDED',
+}
+
+const CLASSIFIED_ONLY_WHERE = {
+  classificationStatus: CLASSIFICATION.CLASSIFIED,
+}
+
 function getBalanceDelta(type, amount) {
   const numericAmount = Number(amount)
   return type === 'INCOME' ? numericAmount : -numericAmount
 }
 
 async function getTransactions(userId, query) {
-  const { month, year, type, categoryId, search, page, limit } = query
+  const { month, year, type, categoryId, search, page, limit, classificationStatus } = query
 
   const where = { userId }
 
@@ -24,7 +34,14 @@ async function getTransactions(userId, query) {
   }
 
   if (type) where.type = type
-  if (categoryId) where.categoryId = categoryId
+  if (categoryId === CLASSIFICATION.UNCLASSIFIED) {
+    where.classificationStatus = CLASSIFICATION.UNCLASSIFIED
+  } else if (categoryId === CLASSIFICATION.EXCLUDED) {
+    where.classificationStatus = CLASSIFICATION.EXCLUDED
+  } else if (categoryId) {
+    where.categoryId = categoryId
+  }
+  if (classificationStatus) where.classificationStatus = classificationStatus
   if (search) where.note = { contains: search, mode: 'insensitive' }
 
   const [transactions, total] = await Promise.all([
@@ -68,7 +85,8 @@ async function createTransaction(userId, data) {
         categoryId,
         note,
         transactionDate: transactionDate ? new Date(transactionDate) : new Date(),
-        source: 'MANUAL'
+        source: 'MANUAL',
+        classificationStatus: CLASSIFICATION.CLASSIFIED,
       },
       include: { category: { select: { id: true, name: true, icon: true } } }
     })
@@ -113,6 +131,7 @@ async function updateTransaction(userId, transactionId, data) {
         ...(type && { type }),
         ...(amount && { amount }),
         ...(categoryId !== undefined && { categoryId }),
+        ...(categoryId && { classificationStatus: CLASSIFICATION.CLASSIFIED }),
         ...(note !== undefined && { note }),
         ...(transactionDate && { transactionDate: new Date(transactionDate) })
       },
@@ -142,6 +161,12 @@ async function deleteTransaction(userId, transactionId) {
 
   if (!existing) return null
 
+  if (existing.source === 'SEPAY') {
+    const error = new Error('Khong xoa cung giao dich SePay; hay dung bo qua de giu audit')
+    error.statusCode = 400
+    throw error
+  }
+
   return prisma.$transaction(async (tx) => {
     await tx.transaction.delete({ where: { id: transactionId } })
 
@@ -159,10 +184,80 @@ async function deleteTransaction(userId, transactionId) {
   })
 }
 
+async function getRequesterRole(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  })
+
+  return user?.role || 'USER'
+}
+
+async function findTransactionForMutation(requesterId, transactionId) {
+  const requesterRole = await getRequesterRole(requesterId)
+  const transaction = await prisma.transaction.findFirst({
+    where: {
+      id: transactionId,
+      ...(requesterRole === 'ADMIN' ? {} : { userId: requesterId }),
+    },
+  })
+
+  return { transaction, requesterRole }
+}
+
+async function excludeTransaction(requesterId, transactionId) {
+  const { transaction } = await findTransactionForMutation(requesterId, transactionId)
+
+  if (!transaction) return null
+
+  return prisma.transaction.update({
+    where: { id: transaction.id },
+    data: {
+      classificationStatus: CLASSIFICATION.EXCLUDED,
+    },
+    include: { category: { select: { id: true, name: true, icon: true } } },
+  })
+}
+
+async function classifyTransaction(requesterId, transactionId, data) {
+  const { transaction } = await findTransactionForMutation(requesterId, transactionId)
+
+  if (!transaction) return null
+
+  const category = await prisma.category.findFirst({
+    where: {
+      id: data.categoryId,
+      OR: [{ userId: transaction.userId }, { userId: null }],
+      type: { in: [transaction.type, 'BOTH'] },
+    },
+    select: { id: true },
+  })
+
+  if (!category) {
+    const error = new Error('Danh muc khong ton tai hoac khong phu hop loai giao dich')
+    error.statusCode = 400
+    throw error
+  }
+
+  return prisma.transaction.update({
+    where: { id: transaction.id },
+    data: {
+      categoryId: data.categoryId,
+      classificationStatus: CLASSIFICATION.CLASSIFIED,
+      ...(data.note !== undefined && { note: data.note }),
+    },
+    include: { category: { select: { id: true, name: true, icon: true } } },
+  })
+}
+
 module.exports = {
   getTransactions,
   getTransactionById,
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  excludeTransaction,
+  classifyTransaction,
+  CLASSIFIED_ONLY_WHERE,
+  CLASSIFICATION,
 }

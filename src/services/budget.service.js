@@ -73,6 +73,7 @@ async function attachBudgetComputedFields(budget) {
       type: 'EXPENSE',
       categoryId: budget.categoryId,
       transactionDate: dateRange,
+      classificationStatus: 'CLASSIFIED',
     },
     _sum: { amount: true },
   })

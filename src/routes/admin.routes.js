@@ -35,6 +35,7 @@ adminRoutes.post(
 )
 adminRoutes.get('/platform-statistics', adminController.getPlatformStatistics)
 adminRoutes.post('/notifications', adminController.createNotification)
+adminRoutes.patch('/users/:userId/bankhub-account', adminController.assignBankhubAccount)
 adminRoutes.get('/sepay-logs', adminController.getSepayLogs)
 adminRoutes.get('/linked-users', adminController.getLinkedUsers)
 
