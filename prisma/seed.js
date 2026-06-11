@@ -67,8 +67,11 @@ async function seedUsers() {
 
       // Admin có thể giữ mã demo riêng, không dùng cho user test Bank Link.
       sepayCode: "MTA001",
-      sepayLinkedAt: new Date(),
+      sepayLinkedAt: null,
+      bankhubAccountXid: null,
       bankAccountNumber: null,
+      bankName: null,
+      bankAccountName: null,
 
       provider: "local",
     },
@@ -80,8 +83,11 @@ async function seedUsers() {
       balance: 0,
 
       sepayCode: "MTA001",
-      sepayLinkedAt: new Date(),
+      sepayLinkedAt: null,
+      bankhubAccountXid: null,
       bankAccountNumber: null,
+      bankName: null,
+      bankAccountName: null,
 
       provider: "local",
     },

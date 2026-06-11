@@ -1,5 +1,6 @@
 const BANKHUB_DEFAULT_BASE_URL = 'https://bankhub-api-sandbox.sepay.vn'
 const TOKEN_EXPIRY_SAFETY_MS = 60 * 1000
+const DEFAULT_REQUEST_TIMEOUT_MS = 20000
 
 let cachedAccessToken = null
 let cachedAccessTokenExpiresAt = 0
@@ -31,7 +32,37 @@ async function parseResponseBody(response) {
   try {
     return JSON.parse(text)
   } catch {
-    return { message: text }
+    return summarizeNonJsonResponse(text)
+  }
+}
+
+function summarizeNonJsonResponse(text) {
+  const title = text.match(/<title>(.*?)<\/title>/is)?.[1]?.trim()
+  const cloudflareRayId = text
+    .match(/Cloudflare Ray ID:\s*<strong[^>]*>(.*?)<\/strong>/is)?.[1]
+    ?.trim()
+  const blockedIp = text.match(/id="cf-footer-ip"[^>]*>(.*?)<\/span>/is)?.[1]?.trim()
+  const isCloudflareBlock =
+    /cloudflare/i.test(text) && /you have been blocked|attention required/i.test(text)
+
+  if (isCloudflareBlock) {
+    return {
+      message: [
+        'SePay BankHub dang chan request qua Cloudflare',
+        cloudflareRayId ? `Ray ID: ${cloudflareRayId}` : null,
+        blockedIp ? `IP: ${blockedIp}` : null,
+      ]
+        .filter(Boolean)
+        .join('. '),
+      cloudflareRayId,
+      blockedIp,
+      responseType: 'cloudflare_block',
+    }
+  }
+
+  return {
+    message: title || text.slice(0, 500),
+    responseType: 'non_json',
   }
 }
 
@@ -45,10 +76,44 @@ function getUpstreamMessage(body, fallback) {
   )
 }
 
+function getDefaultBankhubHeaders() {
+  return {
+    Accept: 'application/json',
+    'User-Agent':
+      process.env.BANKHUB_USER_AGENT ||
+      'MoneyTrack/1.0 (+https://localhost; BankHub Sandbox Demo)',
+  }
+}
+
 function createServiceError(message, statusCode = 400) {
   const error = new Error(message)
   error.statusCode = statusCode
   return error
+}
+
+function getRequestTimeoutMs() {
+  const timeout = Number(process.env.BANKHUB_REQUEST_TIMEOUT_MS)
+
+  return Number.isFinite(timeout) && timeout > 0
+    ? timeout
+    : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+async function fetchBankhub(url, options = {}, context = 'BankHub request') {
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: options.signal || AbortSignal.timeout(getRequestTimeoutMs()),
+    })
+  } catch (error) {
+    const code = error.cause?.code || error.code || error.name || 'NETWORK_ERROR'
+    const detail = error.cause?.message || error.message || 'fetch failed'
+
+    throw createServiceError(
+      `${context}: khong the ket noi toi SePay BankHub (${code}). Kiem tra BANKHUB_API_BASE_URL, internet/firewall/VPN. Chi tiet: ${detail}`,
+      502
+    )
+  }
 }
 
 function extractAccessToken(responseBody) {
@@ -93,13 +158,14 @@ async function getBankhubAccessToken() {
 
   const { clientId, clientSecret } = getBankHubCredentials()
   const basicToken = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-  const response = await fetch(`${getBankHubBaseUrl()}/v1/token`, {
+  const response = await fetchBankhub(`${getBankHubBaseUrl()}/v1/token`, {
     method: 'POST',
     headers: {
+      ...getDefaultBankhubHeaders(),
       Authorization: `Basic ${basicToken}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-  })
+  }, 'Lay BankHub access token')
   const body = await parseResponseBody(response)
 
   if (!response.ok) {
@@ -120,14 +186,15 @@ async function getBankhubAccessToken() {
 
 async function bankhubRequest(path, options = {}) {
   const accessToken = await getBankhubAccessToken()
-  const response = await fetch(`${getBankHubBaseUrl()}${path}`, {
+  const response = await fetchBankhub(`${getBankHubBaseUrl()}${path}`, {
     ...options,
     headers: {
+      ...getDefaultBankhubHeaders(),
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
-  })
+  }, `Goi BankHub API ${path}`)
   const body = await parseResponseBody(response)
 
   if (!response.ok) {
@@ -208,12 +275,9 @@ function extractLinkTokenResponse(responseBody = {}) {
 }
 
 async function createLinkToken() {
-  let companyXid = process.env.BANKHUB_COMPANY_XID
-  let createdCompany = null
-
+  const companyXid = process.env.BANKHUB_COMPANY_XID
   if (!companyXid) {
-    createdCompany = await createCompany()
-    companyXid = createdCompany.companyXid
+    throw createServiceError('Chua cau hinh BANKHUB_COMPANY_XID', 500)
   }
 
   const body = await bankhubRequest('/v1/link-token/create', {
@@ -227,7 +291,7 @@ async function createLinkToken() {
   return {
     ...extractLinkTokenResponse(body),
     companyXid,
-    createdCompanyXid: createdCompany?.companyXid || null,
+    createdCompanyXid: null,
     raw: body,
   }
 }

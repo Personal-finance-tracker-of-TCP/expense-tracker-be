@@ -3,7 +3,6 @@ const { z } = require('zod')
 const adminService = require('../services/admin.service')
 const bankHubService = require('../services/bankhub.service')
 const notificationService = require('../services/notification.service')
-const webhookService = require('../services/webhook.service')
 const { sendSuccess, sendError } = require('../utils/response')
 
 const bankHubSandboxTransactionSchema = z.object({
@@ -59,21 +58,6 @@ const assignBankhubAccountSchema = z.object({
 
 function getStatusCode(error) {
   return error.statusCode || 500
-}
-
-async function simulateSepay(req, res) {
-  try {
-    const payload = {
-      ...req.body,
-      sepayId: req.body?.sepayId || `SIM_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    }
-
-    const result = await webhookService.processSepayWebhook(payload)
-    return sendSuccess(res, result, result.status === 'PROCESSED' ? 201 : 200)
-  } catch (err) {
-    console.error('simulateSepay error:', err)
-    return sendError(res, err.message || 'Lỗi khi giả lập SePay', getStatusCode(err))
-  }
 }
 
 async function getSepayLogs(req, res) {
@@ -199,6 +183,45 @@ async function assignBankhubAccount(req, res) {
   }
 }
 
+async function unlinkBankhubAccountLocal(req, res) {
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: req.params.userId },
+      data: {
+        bankhubAccountXid: null,
+        bankAccountNumber: null,
+        bankName: null,
+        bankAccountName: null,
+        sepayLinkedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        bankhubAccountXid: true,
+        bankAccountNumber: true,
+        bankName: true,
+        bankAccountName: true,
+        sepayLinkedAt: true,
+      },
+    })
+
+    return res.status(200).json({
+      success: true,
+      message: 'Đã hủy liên kết BankHub trong MoneyTrack. Tài khoản trên SePay Sandbox không bị hủy.',
+      data: updatedUser,
+    })
+  } catch (error) {
+    console.error('unlinkBankhubAccountLocal error:', error.message)
+    return sendError(
+      res,
+      error.code === 'P2025' ? 'Khong tim thay nguoi dung' : error.message,
+      error.code === 'P2025' ? 404 : getStatusCode(error)
+    )
+  }
+}
+
 async function createBankHubSandboxTransaction(req, res) {
   const parsed = bankHubSandboxTransactionSchema.safeParse(req.body)
 
@@ -251,11 +274,11 @@ async function createBankHubSandboxTransaction(req, res) {
 }
 
 module.exports = {
-  simulateSepay,
   getSepayLogs,
   getLinkedUsers,
   getPlatformStatistics,
   createNotification,
   assignBankhubAccount,
+  unlinkBankhubAccountLocal,
   createBankHubSandboxTransaction,
 }

@@ -170,6 +170,61 @@ function normalizeSepayBankhubPayload(payload = {}) {
   }
 }
 
+function normalizeBankhubEventName(value) {
+  return normalizeOptionalText(value)?.toUpperCase()
+}
+
+function isBankhubLifecyclePayload(payload = {}) {
+  return Boolean(normalizeBankhubEventName(payload.event) && payload.metadata)
+}
+
+function normalizeBankhubLifecyclePayload(payload = {}) {
+  const metadata = payload.metadata || {}
+  const event = normalizeBankhubEventName(payload.event)
+  const timestamp = Number(payload.timestamp)
+  const transactionDate =
+    Number.isFinite(timestamp) && timestamp > 0
+      ? new Date(timestamp * 1000)
+      : new Date()
+
+  return {
+    event,
+    metadata,
+    sepayId:
+      pickFirstText(payload, ['xid', 'id']) ||
+      [
+        event,
+        pickFirstText(metadata, ['link_session_xid', 'link_token_xid', 'bank_account_xid']),
+      ]
+        .filter(Boolean)
+        .join(':'),
+    transactionDate,
+    bankAccountXid: pickFirstText(metadata, [
+      'bank_account_xid',
+      'bankhubAccountXid',
+      'bankHubAccountXid',
+    ]),
+    accountNumber: pickFirstText(metadata, [
+      'account_number',
+      'accountNumber',
+      'bank_account_number',
+    ]),
+    brandName: pickFirstText(metadata, ['brand_name', 'bank_name', 'bankName']),
+    unlinked:
+      metadata.unlinked === true ||
+      String(metadata.unlinked).toLowerCase() === 'true',
+    state: normalizeOptionalText(metadata.state),
+  }
+}
+
+function isBankhubUnlinkCompletedEvent(data) {
+  if (data.event === 'LINK_SESSION_COMPLETED' && data.unlinked) return true
+
+  return ['BANK_ACCOUNT_UNLINKED', 'BANK_ACCOUNT_INACTIVED'].some((eventName) =>
+    data.event?.includes(eventName)
+  )
+}
+
 function extractSepayCode(text = '') {
   // Support both new MTKXXXXXX and legacy/demo MTUxxx formats.
   const match = text.match(/\b(MTK[A-Z0-9]{6}|MTU[A-Z0-9]{6}|MTU\d+)\b/i)
@@ -383,7 +438,180 @@ async function upsertBankhubWebhookLog(data, payload, status = 'PENDING') {
   })
 }
 
+async function upsertBankhubLifecycleLog(data, payload, status = 'PROCESSED') {
+  const contentParts = [
+    `BankHub event: ${data.event}`,
+    data.state ? `state=${data.state}` : null,
+    data.unlinked ? 'unlinked=true' : null,
+  ].filter(Boolean)
+
+  return prisma.sepayLog.upsert({
+    where: { sepayId: data.sepayId },
+    update: {
+      gateway: data.brandName || 'SePay BankHub',
+      transferAmount: 0,
+      transferType: 'OUT',
+      content: contentParts.join('; '),
+      transactionDate: data.transactionDate,
+      rawPayload: payload || {},
+      status,
+      processed: status === 'PROCESSED' || status === 'DUPLICATE',
+      errorReason: null,
+      matchedCode: data.bankAccountXid || data.accountNumber || null,
+    },
+    create: {
+      sepayId: data.sepayId,
+      gateway: data.brandName || 'SePay BankHub',
+      transferAmount: 0,
+      transferType: 'OUT',
+      content: contentParts.join('; '),
+      transactionDate: data.transactionDate,
+      rawPayload: payload || {},
+      status,
+      processed: status === 'PROCESSED' || status === 'DUPLICATE',
+      matchedCode: data.bankAccountXid || data.accountNumber || null,
+    },
+  })
+}
+
+async function processBankhubLifecycleWebhook(payload) {
+  const data = normalizeBankhubLifecyclePayload(payload)
+
+  if (!data.event || !data.sepayId) {
+    throw createServiceError('Payload BankHub lifecycle khong hop le', 400)
+  }
+
+  const duplicateLog = await prisma.sepayLog.findUnique({
+    where: { sepayId: data.sepayId },
+    select: { id: true, status: true, processed: true },
+  })
+
+  if (duplicateLog?.processed || duplicateLog?.status === 'PROCESSED') {
+    await upsertBankhubLifecycleLog(data, payload, 'DUPLICATE')
+
+    return {
+      event: data.event,
+      status: 'DUPLICATE',
+      duplicated: true,
+    }
+  }
+
+  const log = await upsertBankhubLifecycleLog(data, payload, 'PENDING')
+
+  if (!isBankhubUnlinkCompletedEvent(data)) {
+    const updatedLog = await prisma.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        status: 'PROCESSED',
+        processed: true,
+      },
+    })
+
+    return {
+      event: data.event,
+      status: 'PROCESSED',
+      logId: updatedLog.id,
+    }
+  }
+
+  if (!data.bankAccountXid && !data.accountNumber) {
+    const updatedLog = await prisma.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        status: 'UNMATCHED',
+        processed: true,
+        errorReason: 'BankHub unlink event missing bank account identity',
+      },
+    })
+
+    return {
+      event: data.event,
+      status: 'UNMATCHED',
+      message: 'Missing bank account identity for BankHub unlink event',
+      logId: updatedLog.id,
+    }
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        data.bankAccountXid ? { bankhubAccountXid: data.bankAccountXid } : undefined,
+        data.accountNumber ? { bankAccountNumber: data.accountNumber } : undefined,
+      ].filter(Boolean),
+    },
+    select: {
+      id: true,
+      bankhubAccountXid: true,
+      bankAccountNumber: true,
+      bankName: true,
+    },
+  })
+
+  if (!user) {
+    const updatedLog = await prisma.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        status: 'UNMATCHED',
+        processed: true,
+        errorReason: 'BankHub unlink event user mapping not found',
+        matchedCode: data.bankAccountXid || data.accountNumber || null,
+      },
+    })
+
+    return {
+      event: data.event,
+      status: 'UNMATCHED',
+      message: 'User mapping not found for BankHub unlink event',
+      logId: updatedLog.id,
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        bankhubAccountXid: null,
+        bankAccountNumber: null,
+        bankName: null,
+        bankAccountName: null,
+        sepayLinkedAt: null,
+      },
+    })
+
+    await tx.sepayLog.update({
+      where: { id: log.id },
+      data: {
+        status: 'PROCESSED',
+        processed: true,
+        matchedCode: data.bankAccountXid || data.accountNumber || null,
+      },
+    })
+
+    await tx.notification.create({
+      data: {
+        userId: user.id,
+        title: 'Đã hủy liên kết BankHub Sandbox',
+        message:
+          'Tài khoản BankHub Sandbox đã được hủy liên kết thành công. Lịch sử giao dịch trước đó vẫn được giữ lại.',
+        type: 'BANKHUB_UNLINKED',
+        isRead: false,
+      },
+    })
+  })
+
+  return {
+    event: data.event,
+    status: 'PROCESSED',
+    unlinked: true,
+    userId: user.id,
+  }
+}
+
 async function processSepayBankhubWebhook(payload) {
+  if (isBankhubLifecyclePayload(payload)) {
+    return processBankhubLifecycleWebhook(payload)
+  }
+
   const normalizedPayload = normalizeSepayBankhubPayload(payload)
   const parsed = sepayBankhubPayloadSchema.safeParse(normalizedPayload)
 

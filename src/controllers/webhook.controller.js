@@ -224,21 +224,6 @@ async function handleSepayBankhubWebhook(req, res) {
   }
 }
 
-async function simulateSepay(req, res) {
-  try {
-    const payload = {
-      ...req.body,
-      sepayId: req.body?.sepayId || `SIM_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    }
-
-    const result = await webhookService.processSepayWebhook(payload)
-    return sendSuccess(res, result, result.status === 'PROCESSED' ? 201 : 200)
-  } catch (err) {
-    console.error('simulateSepay error:', err)
-    return sendError(res, err.message || 'Loi khi gia lap SePay', getStatusCode(err))
-  }
-}
-
 async function getSepayLogs(req, res) {
   try {
     const result = await webhookService.getSepayLogs(req.query)
@@ -253,6 +238,5 @@ module.exports = {
   getWebhookHealth,
   handleSepayWebhook,
   handleSepayBankhubWebhook,
-  simulateSepay,
   getSepayLogs,
 }

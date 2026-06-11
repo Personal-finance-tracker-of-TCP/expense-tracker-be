@@ -7,6 +7,17 @@ const adminRoutes = Router()
 
 async function requireAdmin(req, res, next) {
   try {
+    if (req.user?.role === 'ADMIN') {
+      return next()
+    }
+
+    if (req.user?.role && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Chỉ admin mới có quyền truy cập endpoint này',
+      })
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       select: { role: true },
@@ -28,7 +39,6 @@ async function requireAdmin(req, res, next) {
 adminRoutes.use(authMiddleware)
 adminRoutes.use(requireAdmin)
 
-adminRoutes.post('/sepay-simulator', adminController.simulateSepay)
 adminRoutes.post(
   '/bankhub-sandbox/transactions',
   adminController.createBankHubSandboxTransaction
@@ -36,6 +46,7 @@ adminRoutes.post(
 adminRoutes.get('/platform-statistics', adminController.getPlatformStatistics)
 adminRoutes.post('/notifications', adminController.createNotification)
 adminRoutes.patch('/users/:userId/bankhub-account', adminController.assignBankhubAccount)
+adminRoutes.patch('/users/:userId/bankhub-unlink-local', adminController.unlinkBankhubAccountLocal)
 adminRoutes.get('/sepay-logs', adminController.getSepayLogs)
 adminRoutes.get('/linked-users', adminController.getLinkedUsers)
 
