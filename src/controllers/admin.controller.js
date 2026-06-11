@@ -3,6 +3,7 @@ const { z } = require('zod')
 const adminService = require('../services/admin.service')
 const bankHubService = require('../services/bankhub.service')
 const notificationService = require('../services/notification.service')
+const webhookService = require('../services/webhook.service')
 const { sendSuccess, sendError } = require('../utils/response')
 
 const bankHubSandboxTransactionSchema = z.object({
@@ -73,11 +74,6 @@ async function getSepayLogs(req, res) {
 async function getLinkedUsers(req, res) {
   try {
     const users = await prisma.user.findMany({
-      where: {
-        bankhubAccountXid: {
-          not: null,
-        },
-      },
       select: {
         id: true,
         name: true,
@@ -91,7 +87,7 @@ async function getLinkedUsers(req, res) {
         role: true,
       },
       orderBy: {
-        sepayLinkedAt: 'desc',
+        name: 'asc',
       },
     })
 
@@ -135,6 +131,74 @@ async function createNotification(req, res) {
       error.message || 'Lỗi khi tạo thông báo',
       getStatusCode(error)
     )
+  }
+}
+
+async function getNotifications(req, res) {
+  try {
+    const notifications = await prisma.notification.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    })
+
+    return sendSuccess(res, notifications)
+  } catch (error) {
+    console.error('getNotifications error:', error.message)
+    return sendError(res, 'Lỗi khi lấy danh sách thông báo', 500)
+  }
+}
+
+async function markNotificationRead(req, res) {
+  try {
+    const notification = await prisma.notification.update({
+      where: { id: req.params.id },
+      data: { isRead: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    })
+
+    return sendSuccess(res, notification)
+  } catch (error) {
+    console.error('markNotificationRead error:', error.message)
+    return sendError(
+      res,
+      error.code === 'P2025' ? 'Khong tim thay thong bao' : error.message,
+      error.code === 'P2025' ? 404 : getStatusCode(error)
+    )
+  }
+}
+
+async function markAllNotificationsRead(req, res) {
+  try {
+    const result = await prisma.notification.updateMany({
+      where: { isRead: false },
+      data: { isRead: true },
+    })
+
+    return sendSuccess(res, {
+      updatedCount: result.count,
+    })
+  } catch (error) {
+    console.error('markAllNotificationsRead error:', error.message)
+    return sendError(res, 'Lỗi khi đánh dấu tất cả thông báo', 500)
   }
 }
 
@@ -277,6 +341,9 @@ module.exports = {
   getSepayLogs,
   getLinkedUsers,
   getPlatformStatistics,
+  getNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
   createNotification,
   assignBankhubAccount,
   unlinkBankhubAccountLocal,
