@@ -6,10 +6,20 @@ const {
 } = require('../utils/jwt')
 const { hashPassword, comparePassword } = require('../utils/password')
 const {
+  clearPasswordResetTokens,
   createPasswordResetToken,
+  verifyPasswordResetToken,
   updatePasswordWithResetToken,
 } = require('./password-reset.service')
-const { sendPasswordResetOtpEmail } = require('./email.service')
+const {
+  clearEmailVerificationTokens,
+  consumeEmailVerificationToken,
+  createEmailVerificationToken,
+} = require('./email-verification.service')
+const {
+  sendPasswordResetOtpEmail,
+  sendRegistrationOtpEmail,
+} = require('./email.service')
 
 function toSafeUser(user) {
   return {
@@ -44,29 +54,79 @@ async function generateSepayCode() {
   throw new Error('Khong the tao ma SePay, vui long thu lai')
 }
 
-async function register(name, email, password) {
+async function requestRegistrationOtp(name, email) {
   const normalizedEmail = email.trim().toLowerCase()
 
   const existing = await prisma.user.findUnique({
     where: { email: normalizedEmail },
+    select: {
+      id: true,
+      passwordHash: true,
+    },
   })
 
-  if (existing) {
+  if (existing?.passwordHash) {
+    throw new Error('Email đã được sử dụng')
+  }
+
+  const { otp, expiresAt } = await createEmailVerificationToken(normalizedEmail)
+  let emailResult
+
+  try {
+    emailResult = await sendRegistrationOtpEmail({
+      to: normalizedEmail,
+      name,
+      otp,
+    })
+  } catch (error) {
+    await clearEmailVerificationTokens(normalizedEmail)
+    throw error
+  }
+
+  return {
+    message: 'Mã OTP xác thực đăng ký đã được gửi đến email của bạn.',
+    expiresAt,
+    delivered: emailResult.delivered,
+  }
+}
+
+async function register(name, email, password, otp) {
+  const normalizedEmail = email.trim().toLowerCase()
+
+  await consumeEmailVerificationToken({ email: normalizedEmail, otp })
+
+  let user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  })
+
+  if (user?.passwordHash) {
     throw new Error('Email đã được sử dụng')
   }
 
   const hashed = await hashPassword(password)
-  const sepayCode = await generateSepayCode()
 
-  const user = await prisma.user.create({
-    data: {
-      name: name.trim(),
-      email: normalizedEmail,
-      passwordHash: hashed,
-      sepayCode,
-      provider: 'local',
-    },
-  })
+  if (user) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        name: name.trim() || user.name,
+        passwordHash: hashed,
+        provider: user.provider || 'local',
+      },
+    })
+  } else {
+    const sepayCode = await generateSepayCode()
+
+    user = await prisma.user.create({
+      data: {
+        name: name.trim(),
+        email: normalizedEmail,
+        passwordHash: hashed,
+        sepayCode,
+        provider: 'local',
+      },
+    })
+  }
 
   const accessToken = generateAccessToken(user.id, user.role)
   const refreshToken = generateRefreshToken(user.id)
@@ -75,6 +135,8 @@ async function register(name, email, password) {
     where: { id: user.id },
     data: { refreshToken },
   })
+
+  await clearEmailVerificationTokens(normalizedEmail)
 
   return {
     user: toSafeUser(user),
@@ -212,7 +274,7 @@ async function requestPasswordReset(email) {
     where: { email: normalizedEmail },
   })
 
-  if (!user || !user.passwordHash) {
+  if (!user) {
     return {
       message:
         'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi mã OTP đặt lại mật khẩu.',
@@ -220,17 +282,32 @@ async function requestPasswordReset(email) {
   }
 
   const { otp, expiresAt } = await createPasswordResetToken(user)
+  let emailResult
 
-  await sendPasswordResetOtpEmail({
-    to: user.email,
-    name: user.name,
-    otp,
-  })
+  try {
+    emailResult = await sendPasswordResetOtpEmail({
+      to: user.email,
+      name: user.name,
+      otp,
+    })
+  } catch (error) {
+    await clearPasswordResetTokens(user.id)
+    throw error
+  }
 
   return {
     message:
       'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi mã OTP đặt lại mật khẩu.',
     expiresAt,
+    delivered: emailResult.delivered,
+  }
+}
+
+async function verifyPasswordResetOtp(email, otp) {
+  await verifyPasswordResetToken({ email, otp })
+
+  return {
+    message: 'Xác thực OTP thành công. Vui lòng đặt mật khẩu mới.',
   }
 }
 
@@ -243,11 +320,13 @@ async function resetPassword(email, otp, newPassword) {
 }
 
 module.exports = {
+  requestRegistrationOtp,
   register,
   login,
   loginWithGoogle,
   refresh,
   logout,
   requestPasswordReset,
+  verifyPasswordResetOtp,
   resetPassword,
 }

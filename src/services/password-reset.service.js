@@ -32,6 +32,12 @@ async function createPasswordResetToken(user) {
   return { otp, expiresAt }
 }
 
+async function clearPasswordResetTokens(userId) {
+  await prisma.passwordResetToken.deleteMany({
+    where: { userId },
+  })
+}
+
 async function findActivePasswordResetToken(userId) {
   return prisma.passwordResetToken.findFirst({
     where: {
@@ -54,7 +60,7 @@ async function consumePasswordResetToken({ email, otp }) {
     where: { email: normalizedEmail },
   })
 
-  if (!user || !user.passwordHash) {
+  if (!user) {
     throw new Error('Mã OTP không hợp lệ hoặc đã hết hạn')
   }
 
@@ -91,6 +97,42 @@ async function consumePasswordResetToken({ email, otp }) {
   return { user }
 }
 
+async function verifyPasswordResetToken({ email, otp }) {
+  const normalizedEmail = normalizeEmail(email)
+
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  })
+
+  if (!user) {
+    throw new Error('Mã OTP không hợp lệ hoặc đã hết hạn')
+  }
+
+  const token = await findActivePasswordResetToken(user.id)
+
+  if (!token) {
+    throw new Error('Mã OTP không hợp lệ hoặc đã hết hạn')
+  }
+
+  const matched = await comparePassword(otp, token.otpHash)
+
+  if (!matched) {
+    const nextAttemptCount = token.attemptCount + 1
+
+    await prisma.passwordResetToken.update({
+      where: { id: token.id },
+      data: {
+        attemptCount: nextAttemptCount,
+        usedAt: nextAttemptCount >= RESET_TOKEN_MAX_ATTEMPTS ? new Date() : null,
+      },
+    })
+
+    throw new Error('Mã OTP không hợp lệ hoặc đã hết hạn')
+  }
+
+  return { user }
+}
+
 async function updatePasswordWithResetToken({ email, otp, newPassword }) {
   const { user } = await consumePasswordResetToken({ email, otp })
   const newPasswordHash = await hashPassword(newPassword)
@@ -112,6 +154,8 @@ async function updatePasswordWithResetToken({ email, otp, newPassword }) {
 
 module.exports = {
   RESET_TOKEN_TTL_MINUTES,
+  clearPasswordResetTokens,
   createPasswordResetToken,
+  verifyPasswordResetToken,
   updatePasswordWithResetToken,
 }

@@ -1,11 +1,13 @@
 const prisma = require('../lib/prisma')
 const {
+  requestRegistrationOtp: requestRegistrationOtpService,
   register: registerService,
   login: loginService,
   loginWithGoogle,
   refresh: refreshService,
   logout: logoutService,
   requestPasswordReset,
+  verifyPasswordResetOtp,
   resetPassword,
 } = require('../services/auth.service')
 const { sendSuccess, sendError } = require('../utils/response')
@@ -27,10 +29,39 @@ function isValidOtp(value) {
 }
 
 // Xu ly dang ky tai khoan local bang name, email, password.
+async function requestRegisterOtpController(req, res) {
+  const name = normalizeText(req.body?.name || req.body?.fullName)
+  const email = normalizeEmail(req.body?.email)
+
+  if (!name) {
+    return sendError(res, 'Vui lòng nhập họ tên')
+  }
+
+  if (name.length < 2) {
+    return sendError(res, 'Tên phải có ít nhất 2 ký tự')
+  }
+
+  if (!email) {
+    return sendError(res, 'Vui lòng nhập email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email không hợp lệ')
+  }
+
+  try {
+    const result = await requestRegistrationOtpService(name, email)
+    return sendSuccess(res, result)
+  } catch (error) {
+    return sendError(res, error.message)
+  }
+}
+
 async function registerController(req, res) {
   const name = normalizeText(req.body?.name || req.body?.fullName)
   const email = normalizeEmail(req.body?.email)
   const password = typeof req.body?.password === 'string' ? req.body.password : ''
+  const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : ''
 
   if (!name) {
     return sendError(res, 'Vui lòng nhập họ tên')
@@ -56,8 +87,16 @@ async function registerController(req, res) {
     return sendError(res, 'Mật khẩu phải có ít nhất 8 ký tự')
   }
 
+  if (!otp) {
+    return sendError(res, 'Vui lòng nhập mã OTP xác thực email')
+  }
+
+  if (!isValidOtp(otp)) {
+    return sendError(res, 'Mã OTP phải gồm 6 chữ số')
+  }
+
   try {
-    const result = await registerService(name, email, password)
+    const result = await registerService(name, email, password, otp)
     return sendSuccess(res, result, 201)
   } catch (error) {
     return sendError(res, error.message)
@@ -205,6 +244,34 @@ async function forgotPasswordController(req, res) {
   }
 }
 
+async function verifyResetOtpController(req, res) {
+  const email = normalizeEmail(req.body?.email)
+  const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : ''
+
+  if (!email) {
+    return sendError(res, 'Vui lòng nhập email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email không hợp lệ')
+  }
+
+  if (!otp) {
+    return sendError(res, 'Vui lòng nhập mã OTP')
+  }
+
+  if (!isValidOtp(otp)) {
+    return sendError(res, 'Mã OTP phải gồm 6 chữ số')
+  }
+
+  try {
+    const result = await verifyPasswordResetOtp(email, otp)
+    return sendSuccess(res, result)
+  } catch (error) {
+    return sendError(res, error.message, 400)
+  }
+}
+
 async function resetPasswordController(req, res) {
   const email = normalizeEmail(req.body?.email)
   const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : ''
@@ -248,6 +315,7 @@ async function resetPasswordController(req, res) {
 }
 
 module.exports = {
+  requestRegisterOtpController,
   registerController,
   loginController,
   googleLoginController,
@@ -255,5 +323,6 @@ module.exports = {
   logoutUserController,
   getMeController,
   forgotPasswordController,
+  verifyResetOtpController,
   resetPasswordController,
 }
