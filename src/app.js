@@ -23,7 +23,7 @@ app.use(
     credentials: true,
   })
 )
-app.use(express.json())
+app.use(express.json({ limit: '2mb' }))
 const cookieParser = require('cookie-parser')
 app.use(cookieParser())
 
