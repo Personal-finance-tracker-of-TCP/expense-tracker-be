@@ -18,6 +18,18 @@ const changePasswordSchema = z.object({
   path: ['confirmNewPassword'],
 })
 
+const MAX_AVATAR_URL_LENGTH = 1_500_000
+
+const updateProfileSchema = z.object({
+  name: z.string().trim().min(2, 'Tên phải có ít nhất 2 ký tự').max(80, 'Tên tối đa 80 ký tự'),
+  avatarUrl: z
+    .string()
+    .trim()
+    .max(MAX_AVATAR_URL_LENGTH, 'Ảnh đại diện tối đa 1MB')
+    .optional()
+    .or(z.literal('')),
+})
+
 function generateSandboxAccountNumber() {
   let suffix = ''
   for (let index = 0; index < 8; index += 1) {
@@ -126,6 +138,8 @@ function toSafeUser(user) {
     bankAccountName: user.bankAccountName,
     sepayLinkedAt: user.sepayLinkedAt,
     avatarUrl: user.avatarUrl,
+    provider: user.provider,
+    createdAt: user.createdAt,
   }
 }
 
@@ -166,6 +180,84 @@ async function updateMyBalance(req, res) {
   } catch (error) {
     console.error('updateMyBalance error:', error)
     return sendError(res, 'Loi khi cap nhat so du', 500)
+  }
+}
+
+async function getMyProfile(req, res) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        balance: true,
+        sepayCode: true,
+        bankhubAccountXid: true,
+        bankAccountNumber: true,
+        bankName: true,
+        bankAccountName: true,
+        sepayLinkedAt: true,
+        avatarUrl: true,
+        provider: true,
+        createdAt: true,
+      },
+    })
+
+    if (!user) {
+      return sendError(res, 'Không tìm thấy người dùng', 404)
+    }
+
+    return sendSuccess(res, toSafeUser(user))
+  } catch (error) {
+    console.error('getMyProfile error:', error)
+    return sendError(res, 'Lỗi khi lấy hồ sơ', 500)
+  }
+}
+
+async function updateMyProfile(req, res) {
+  const parsed = updateProfileSchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    return sendError(
+      res,
+      parsed.error.issues?.[0]?.message || 'Dữ liệu hồ sơ không hợp lệ',
+      400
+    )
+  }
+
+  const avatarUrl = parsed.data.avatarUrl ? parsed.data.avatarUrl : null
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: {
+        name: parsed.data.name,
+        avatarUrl,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        balance: true,
+        sepayCode: true,
+        bankhubAccountXid: true,
+        bankAccountNumber: true,
+        bankName: true,
+        bankAccountName: true,
+        sepayLinkedAt: true,
+        avatarUrl: true,
+        provider: true,
+        createdAt: true,
+      },
+    })
+
+    return sendSuccess(res, { user: toSafeUser(user) })
+  } catch (error) {
+    console.error('updateMyProfile error:', error)
+    return sendError(res, 'Lỗi khi cập nhật hồ sơ', 500)
   }
 }
 
@@ -247,6 +339,8 @@ async function changeMyPassword(req, res) {
 }
 
 module.exports = {
+  getMyProfile,
+  updateMyProfile,
   updateMyBalance,
   updateMySepaySandboxLink,
   changeMyPassword,

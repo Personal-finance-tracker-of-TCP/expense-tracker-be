@@ -3,6 +3,7 @@ const authMiddleware = require('../middlewares/auth.middleware')
 const {
   registerController,
   loginController,
+  googleLoginController,
   refreshTokenController,
   logoutUserController,
   getMeController,
@@ -12,6 +13,7 @@ const {
 
 router.post('/register', registerController)
 router.post('/login', loginController)
+router.post('/google', googleLoginController)
 router.post('/refresh', refreshTokenController)
 router.post('/forgot-password', forgotPasswordController)
 router.post('/reset-password', resetPasswordController)

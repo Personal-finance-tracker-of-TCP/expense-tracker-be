@@ -2,6 +2,7 @@ const prisma = require('../lib/prisma')
 const {
   register: registerService,
   login: loginService,
+  loginWithGoogle,
   refresh: refreshService,
   logout: logoutService,
   requestPasswordReset,
@@ -85,6 +86,40 @@ async function loginController(req, res) {
     return sendSuccess(res, result)
   } catch (error) {
     return sendError(res, error.message, 401)
+  }
+}
+
+// NextAuth Google callback gọi endpoint này sau khi Google đã xác thực người dùng.
+async function googleLoginController(req, res) {
+  const expectedSecret = process.env.OAUTH_EXCHANGE_SECRET
+  if (
+    expectedSecret &&
+    req.headers['x-oauth-exchange-secret'] !== expectedSecret
+  ) {
+    return sendError(res, 'Không được phép trao đổi OAuth', 401)
+  }
+
+  const email = normalizeEmail(req.body?.email)
+  const name = normalizeText(req.body?.name || req.body?.fullName)
+  const avatarUrl = normalizeText(req.body?.avatarUrl)
+
+  if (!email) {
+    return sendError(res, 'Google không trả về email')
+  }
+
+  if (!isValidEmail(email)) {
+    return sendError(res, 'Email Google không hợp lệ')
+  }
+
+  if (!name) {
+    return sendError(res, 'Google không trả về họ tên')
+  }
+
+  try {
+    const result = await loginWithGoogle({ email, name, avatarUrl })
+    return sendSuccess(res, result)
+  } catch (error) {
+    return sendError(res, error.message, 500)
   }
 }
 
@@ -215,6 +250,7 @@ async function resetPasswordController(req, res) {
 module.exports = {
   registerController,
   loginController,
+  googleLoginController,
   refreshTokenController,
   logoutUserController,
   getMeController,

@@ -25,6 +25,8 @@ function toSafeUser(user) {
     sepayLinkedAt: user.sepayLinkedAt,
     avatarUrl: user.avatarUrl,
     balance: user.balance,
+    provider: user.provider,
+    createdAt: user.createdAt,
   }
 }
 
@@ -118,6 +120,53 @@ async function login(email, password) {
   }
 }
 
+// Đăng nhập/đăng ký bằng hồ sơ Google đã được NextAuth xác thực ở frontend server.
+async function loginWithGoogle({ email, name, avatarUrl }) {
+  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedName = name.trim()
+
+  let user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  })
+
+  if (user) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        name: normalizedName || user.name,
+        avatarUrl: avatarUrl || user.avatarUrl,
+        provider: user.provider || 'google',
+      },
+    })
+  } else {
+    const sepayCode = await generateSepayCode()
+    user = await prisma.user.create({
+      data: {
+        name: normalizedName,
+        email: normalizedEmail,
+        passwordHash: null,
+        sepayCode,
+        provider: 'google',
+        avatarUrl: avatarUrl || null,
+      },
+    })
+  }
+
+  const accessToken = generateAccessToken(user.id, user.role)
+  const refreshToken = generateRefreshToken(user.id)
+
+  user = await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken },
+  })
+
+  return {
+    user: toSafeUser(user),
+    accessToken,
+    refreshToken,
+  }
+}
+
 // Làm mới access token bằng refresh token hợp lệ và xoay vòng refresh token.
 async function refresh(token) {
   const payload = verifyRefreshToken(token)
@@ -196,6 +245,7 @@ async function resetPassword(email, otp, newPassword) {
 module.exports = {
   register,
   login,
+  loginWithGoogle,
   refresh,
   logout,
   requestPasswordReset,
