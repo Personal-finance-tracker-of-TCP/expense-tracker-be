@@ -21,6 +21,7 @@
   "homepage": "https://github.com/Personal-finance-tracker-of-TCP/expense-tracker-be#readme",
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

@@ -1,102 +1,165 @@
-const dns = require('dns')
-const nodemailer = require('nodemailer')
+const SENDGRID_MAIL_SEND_URL = 'https://api.sendgrid.com/v3/mail/send'
+const SENDGRID_TIMEOUT_MS = 20000
+const MAX_SENDGRID_ATTEMPTS = 3
 
-dns.setDefaultResultOrder('ipv4first')
-
-const TRANSIENT_SMTP_ERROR_CODES = new Set([
+const TRANSIENT_NETWORK_ERROR_CODES = new Set([
   'ETIMEDOUT',
-  'ECONNECTION',
-  'ESOCKET',
   'ECONNRESET',
   'EAI_AGAIN',
 ])
 
-let smtpTransporter = null
+const TRANSIENT_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504])
+const PERMANENT_STATUS_CODES = new Set([400, 401, 403, 404, 413])
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function isTransientSmtpError(error) {
-  return TRANSIENT_SMTP_ERROR_CODES.has(error?.code)
-}
+function getEmailConfig() {
+  const apiKey = process.env.SENDGRID_API_KEY || process.env.SMTP_PASS
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM_EMAIL
+  const fromName =
+    process.env.SENDGRID_FROM_NAME ||
+    process.env.SMTP_FROM_NAME ||
+    process.env.APP_NAME ||
+    'FinTrack'
 
-function formatSmtpError(error) {
-  if (error?.code === 'EAUTH' || error?.responseCode === 535) {
-    return 'SMTP từ chối đăng nhập. Với SendGrid, SMTP_USER phải là "apikey" và SMTP_PASS phải là SendGrid API Key.'
+  if (!apiKey) {
+    throw new Error('Thiếu SENDGRID_API_KEY hoặc SMTP_PASS để gửi email qua SendGrid Web API.')
   }
 
-  if (
-    error?.code === 'ECONNECTION' ||
-    error?.code === 'ETIMEDOUT' ||
-    error?.code === 'ENETUNREACH' ||
-    error?.code === 'ESOCKET' ||
-    error?.code === 'ECONNRESET' ||
-    error?.code === 'EAI_AGAIN'
-  ) {
-    return 'Không thể kết nối máy chủ SMTP. Hãy kiểm tra SMTP_HOST, SMTP_PORT, SMTP_SECURE và mạng.'
+  if (!fromEmail) {
+    throw new Error('Thiếu SENDGRID_FROM_EMAIL hoặc SMTP_FROM_EMAIL.')
   }
 
-  return error?.message || 'Không thể gửi email OTP qua SMTP'
+  return { apiKey, fromEmail, fromName }
 }
 
-function logSafeSmtpError(error, attempt) {
-  console.error('SMTP send failed:', {
-    attempt,
+function getSendGridErrorMessage(statusCode, body) {
+  const errors = body?.errors
+
+  if (Array.isArray(errors) && errors.length > 0 && errors[0]?.message) {
+    return `SendGrid lỗi ${statusCode}: ${errors[0].message}`
+  }
+
+  if (statusCode === 401) {
+    return 'SendGrid từ chối xác thực. Hãy kiểm tra SENDGRID_API_KEY hoặc SMTP_PASS.'
+  }
+
+  if (statusCode === 403) {
+    return 'SendGrid từ chối gửi email. Hãy kiểm tra sender/domain đã verify trong SendGrid.'
+  }
+
+  return `SendGrid trả về lỗi ${statusCode}.`
+}
+
+async function readResponseBody(response) {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+function createSendGridError({ statusCode, body }) {
+  const error = new Error(getSendGridErrorMessage(statusCode, body))
+  error.statusCode = statusCode
+  error.code = 'SENDGRID_API_ERROR'
+  return error
+}
+
+function normalizeFetchError(error) {
+  if (error?.name === 'AbortError') {
+    const timeoutError = new Error('SendGrid request timed out.')
+    timeoutError.code = 'ETIMEDOUT'
+    return timeoutError
+  }
+
+  return error
+}
+
+function shouldRetrySendGridError(error) {
+  if (PERMANENT_STATUS_CODES.has(error?.statusCode)) {
+    return false
+  }
+
+  if (TRANSIENT_STATUS_CODES.has(error?.statusCode)) {
+    return true
+  }
+
+  return TRANSIENT_NETWORK_ERROR_CODES.has(error?.code)
+}
+
+function logSendGridSuccess(to, statusCode) {
+  console.info('[email] OTP sent', {
+    to,
+    statusCode,
+  })
+}
+
+function logSendGridFailure(to, error) {
+  console.error('[email] OTP send failed', {
+    to,
+    statusCode: error?.statusCode,
     code: error?.code,
-    command: error?.command,
-    responseCode: error?.responseCode,
-    message: formatSmtpError(error),
+    message: error?.message || 'Không thể gửi email OTP qua SendGrid.',
   })
 }
 
-function getSmtpConfig() {
-  const host = process.env.SMTP_HOST
-  const port = Number(process.env.SMTP_PORT || 587)
-  const secure = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true'
-  const user = process.env.SMTP_USER
-  const pass = process.env.SMTP_PASS
-  const fromEmail = process.env.SMTP_FROM_EMAIL || user
-  const fromName = process.env.SMTP_FROM_NAME || process.env.APP_NAME || 'FinTrack'
+async function postSendGridMail(payload, apiKey) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), SENDGRID_TIMEOUT_MS)
 
-  if (!host) {
-    throw new Error('Thiếu SMTP_HOST')
+  try {
+    const response = await fetch(SENDGRID_MAIL_SEND_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      const body = await readResponseBody(response)
+      throw createSendGridError({
+        statusCode: response.status,
+        body,
+      })
+    }
+
+    return {
+      statusCode: response.status,
+    }
+  } catch (error) {
+    throw normalizeFetchError(error)
+  } finally {
+    clearTimeout(timeout)
   }
-
-  if (!user) {
-    throw new Error('Thiếu SMTP_USER')
-  }
-
-  if (!pass) {
-    throw new Error('Thiếu SMTP_PASS. Với SendGrid, SMTP_PASS phải là SendGrid API Key.')
-  }
-
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error('SMTP_PORT không hợp lệ')
-  }
-
-  return { host, port, secure, user, pass, fromEmail, fromName }
 }
 
-function getSmtpTransporter() {
-  if (smtpTransporter) return smtpTransporter
+async function sendSendGridMailWithRetry(to, payload, apiKey) {
+  let lastError
 
-  const { host, port, secure, user, pass } = getSmtpConfig()
-  smtpTransporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    family: 4,
-    connectionTimeout: 20000,
-    greetingTimeout: 15000,
-    socketTimeout: 30000,
-    auth: {
-      user,
-      pass,
-    },
-  })
+  for (let attempt = 1; attempt <= MAX_SENDGRID_ATTEMPTS; attempt += 1) {
+    try {
+      const result = await postSendGridMail(payload, apiKey)
+      logSendGridSuccess(to, result.statusCode)
+      return result
+    } catch (error) {
+      lastError = error
 
-  return smtpTransporter
+      if (!shouldRetrySendGridError(error) || attempt === MAX_SENDGRID_ATTEMPTS) {
+        logSendGridFailure(to, error)
+        break
+      }
+
+      await delay(500 * attempt)
+    }
+  }
+
+  throw lastError
 }
 
 function createOtpEmailHtml({
@@ -144,42 +207,28 @@ function createOtpEmailContent({
   }
 }
 
-async function sendMailWithRetry(transporter, mailOptions, maxAttempts = 2) {
-  let lastError
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      return await transporter.sendMail(mailOptions)
-    } catch (error) {
-      lastError = error
-      logSafeSmtpError(error, attempt)
-
-      if (!isTransientSmtpError(error) || attempt === maxAttempts) {
-        break
-      }
-
-      smtpTransporter = null
-      await delay(500 * attempt)
-      transporter = getSmtpTransporter()
-    }
-  }
-
-  throw lastError
-}
-
-async function sendOtpBySmtp(content) {
-  const { fromEmail, fromName } = getSmtpConfig()
-  const transporter = getSmtpTransporter()
-
-  try {
-    await sendMailWithRetry(transporter, {
-      from: `"${fromName}" <${fromEmail}>`,
-      ...content,
-    })
-
-    return { delivered: true, provider: 'smtp' }
-  } catch (error) {
-    throw new Error(formatSmtpError(error))
+function createSendGridPayload({ to, subject, text, html }, { fromEmail, fromName }) {
+  return {
+    personalizations: [
+      {
+        to: [{ email: to }],
+      },
+    ],
+    from: {
+      email: fromEmail,
+      name: fromName,
+    },
+    subject,
+    content: [
+      {
+        type: 'text/plain',
+        value: text,
+      },
+      {
+        type: 'text/html',
+        value: html,
+      },
+    ],
   }
 }
 
@@ -191,6 +240,7 @@ async function sendOtpEmail({
   title,
   intro,
 }) {
+  const emailConfig = getEmailConfig()
   const content = createOtpEmailContent({
     to,
     name,
@@ -199,8 +249,11 @@ async function sendOtpEmail({
     title,
     intro,
   })
+  const payload = createSendGridPayload(content, emailConfig)
 
-  return sendOtpBySmtp(content)
+  await sendSendGridMailWithRetry(to, payload, emailConfig.apiKey)
+
+  return { delivered: true, provider: 'sendgrid' }
 }
 
 async function sendPasswordResetOtpEmail({ to, name, otp, expiresInMinutes = 10 }) {
