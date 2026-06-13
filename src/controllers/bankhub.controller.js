@@ -108,7 +108,7 @@ async function refreshBankhubStatus(req, res) {
       return sendSuccess(res, {
         ...currentUser,
         isLinked: false,
-        message: 'User chua co BankHub XID trong MoneyTrack',
+        message: 'User chua co BankHub XID trong FinTrack',
       })
     }
 
@@ -320,7 +320,7 @@ async function unlinkBankhubLocal(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: 'Đã hủy liên kết BankHub trong MoneyTrack. Tài khoản trên SePay Sandbox không bị hủy.',
+      message: 'Đã hủy liên kết BankHub trong FinTrack. Tài khoản trên SePay Sandbox không bị hủy.',
       data: {
         ...updatedUser,
         isLinked: false,
@@ -330,7 +330,7 @@ async function unlinkBankhubLocal(req, res) {
     console.error('unlinkBankhubLocal error:', getSafeErrorLogMessage(error))
     return sendError(
       res,
-      error.message || 'Khong the huy lien ket BankHub trong MoneyTrack',
+      error.message || 'Khong the huy lien ket BankHub trong FinTrack',
       getStatusCode(error)
     )
   }

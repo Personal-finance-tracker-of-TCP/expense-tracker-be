@@ -398,9 +398,9 @@ function getNotificationCopy(transferType, amount, content) {
   return {
     title:
       transferType === 'OUT'
-        ? 'Tu dong ghi nhan chi tien qua SePay'
-        : 'Tu dong nhan tien qua SePay',
-    message: `Tai khoan cua ban da ${directionText} (noi dung giao dich: "${content}"). Giao dich dang cho ban phan loai trong danh sach giao dich.`,
+        ? 'Tự động ghi nhận chi tiền qua SePay'
+        : 'Tự  động nhận tiền qua SePay',
+    message: `Tài khoản của bạn đã ${directionText} (nội dung giao dịch: "${content}"). Giao dich dang cho ban phan loai trong danh sach giao dich.`,
     type: transferType === 'OUT' ? 'SEPAY_EXPENSE' : 'SEPAY_INCOME',
   }
 }

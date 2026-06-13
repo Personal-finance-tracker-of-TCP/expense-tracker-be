@@ -14,26 +14,28 @@ const optionalText = (maxLength, message) =>
 
 const feedbackSchema = z.object({
   title: z
-    .string({ message: 'title là bắt buộc' })
+    .string({ message: 'title la bat buoc' })
     .trim()
-    .min(3, 'title phải có ít nhất 3 ký tự')
-    .max(100, 'title tối đa 100 ký tự'),
+    .min(3, 'title phai co it nhat 3 ky tu')
+    .max(100, 'title toi da 100 ky tu'),
   message: z
-    .string({ message: 'message là bắt buộc' })
+    .string({ message: 'message la bat buoc' })
     .trim()
-    .min(10, 'message phải có ít nhất 10 ký tự')
-    .max(500, 'message tối đa 500 ký tự'),
+    .min(10, 'message phai co it nhat 10 ky tu')
+    .max(500, 'message toi da 500 ky tu'),
+  type: z.enum(['BUG', 'FEATURE', 'OTHER']).default('OTHER'),
   rating: z.coerce
-    .number({ message: 'rating phải là số' })
-    .int('rating phải là số nguyên')
-    .min(1, 'rating tối thiểu là 1')
-    .max(5, 'rating tối đa là 5'),
-  senderName: optionalText(100, 'senderName tối đa 100 ký tự'),
-  senderEmail: optionalText(150, 'senderEmail tối đa 150 ký tự'),
+    .number({ message: 'rating phai la so' })
+    .int('rating phai la so nguyen')
+    .min(1, 'rating toi thieu la 1')
+    .max(5, 'rating toi da la 5')
+    .optional(),
+  senderName: optionalText(100, 'senderName toi da 100 ky tu'),
+  senderEmail: optionalText(150, 'senderEmail toi da 150 ky tu'),
 })
 
 function getValidationMessage(error) {
-  return error.issues?.[0]?.message || 'Dữ liệu feedback không hợp lệ'
+  return error.issues?.[0]?.message || 'Du lieu feedback khong hop le'
 }
 
 async function createFeedback(req, res) {
@@ -44,19 +46,23 @@ async function createFeedback(req, res) {
   }
 
   try {
-    const result = await feedbackService.sendFeedbackToAdmins(parsed.data)
+    const result = await feedbackService.createFeedback({
+      ...parsed.data,
+      userId: req.user.userId,
+    })
 
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
       message: result.message,
       data: {
+        feedback: result.feedback,
         adminCount: result.adminCount,
         notificationCount: result.notificationCount,
       },
     })
   } catch (error) {
     console.error('createFeedback error:', error.message)
-    return sendError(res, 'Lỗi khi gửi feedback tới admin', 500)
+    return sendError(res, 'Loi khi gui phan hoi toi admin', 500)
   }
 }
 

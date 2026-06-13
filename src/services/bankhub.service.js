@@ -81,7 +81,7 @@ function getDefaultBankhubHeaders() {
     Accept: 'application/json',
     'User-Agent':
       process.env.BANKHUB_USER_AGENT ||
-      'MoneyTrack/1.0 (+https://localhost; BankHub Sandbox Demo)',
+      'FinTrack/1.0 (+https://localhost; BankHub Sandbox Demo)',
   }
 }
 
@@ -232,7 +232,7 @@ async function createCompany() {
   const body = await bankhubRequest('/v1/company/create', {
     method: 'POST',
     body: JSON.stringify({
-      full_name: process.env.BANKHUB_COMPANY_NAME || 'MoneyTrack Sandbox',
+      full_name: process.env.BANKHUB_COMPANY_NAME || 'FinTrack Sandbox',
       status: 'Active',
     }),
   })

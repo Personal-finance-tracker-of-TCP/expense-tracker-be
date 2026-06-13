@@ -7,18 +7,21 @@ function truncateText(text, maxLength = 180) {
 
 function buildFeedbackNotificationMessage(data) {
   const senderParts = [data.senderName, data.senderEmail].filter(Boolean)
-  const senderText = senderParts.length > 0 ? senderParts.join(' - ') : 'Ẩn danh'
+  const senderText = senderParts.length > 0 ? senderParts.join(' - ') : 'Nguoi dung'
   const preview = truncateText(data.message)
 
   return [
-    `Tiêu đề: ${data.title}`,
-    `Rating: ${data.rating}/5`,
-    `Người gửi: ${senderText}`,
-    `Nội dung: ${preview}`,
-  ].join('\n')
+    `Tieu de: ${data.title}`,
+    `Loai: ${data.type || 'OTHER'}`,
+    data.rating ? `Danh gia: ${data.rating}/5` : null,
+    `Nguoi gui: ${senderText}`,
+    `Noi dung: ${preview}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
-async function sendFeedbackToAdmins(data) {
+async function notifyAdmins(data) {
   const admins = await prisma.user.findMany({
     where: { role: 'ADMIN' },
     select: { id: true },
@@ -28,7 +31,7 @@ async function sendFeedbackToAdmins(data) {
     return {
       adminCount: 0,
       notificationCount: 0,
-      message: 'Không có admin để nhận feedback',
+      message: 'Khong co admin de nhan phan hoi',
     }
   }
 
@@ -36,7 +39,7 @@ async function sendFeedbackToAdmins(data) {
   await prisma.notification.createMany({
     data: admins.map((admin) => ({
       userId: admin.id,
-      title: 'Feedback mới từ người dùng',
+      title: 'Phan hoi moi tu nguoi dung',
       message: notificationMessage,
       type: 'FEEDBACK',
       isRead: false,
@@ -46,10 +49,76 @@ async function sendFeedbackToAdmins(data) {
   return {
     adminCount: admins.length,
     notificationCount: admins.length,
-    message: 'Feedback đã được gửi tới admin.',
+    message: 'Phan hoi da duoc gui toi admin.',
   }
 }
 
+async function createFeedback(data) {
+  const feedback = await prisma.feedback.create({
+    data: {
+      userId: data.userId,
+      title: data.title,
+      message: data.message,
+      type: data.type || 'OTHER',
+      rating: data.rating || null,
+      status: 'NEW',
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  })
+
+  const notificationResult = await notifyAdmins(data)
+
+  return {
+    feedback,
+    ...notificationResult,
+  }
+}
+
+async function listFeedback() {
+  return prisma.feedback.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  })
+}
+
+async function updateFeedbackStatus(id, status) {
+  return prisma.feedback.update({
+    where: { id },
+    data: { status },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  })
+}
+
 module.exports = {
-  sendFeedbackToAdmins,
+  createFeedback,
+  listFeedback,
+  updateFeedbackStatus,
 }

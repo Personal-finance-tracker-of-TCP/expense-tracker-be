@@ -35,14 +35,14 @@ async function getPublicHealth() {
 
     return {
       status: 'ok',
-      message: 'MoneyTrack API is running',
+      message: 'FinTrack API is running',
       database: 'ok',
       checkedAt: new Date().toISOString(),
     }
   } catch {
     return {
       status: 'degraded',
-      message: 'MoneyTrack API is running, database health check failed',
+      message: 'FinTrack API is running, database health check failed',
       database: 'unavailable',
       checkedAt: new Date().toISOString(),
     }
