@@ -144,6 +144,7 @@ async function createNotification(req, res) {
 async function getNotifications(req, res) {
   try {
     const notifications = await prisma.notification.findMany({
+      where: { type: 'FEEDBACK' },
       orderBy: { createdAt: 'desc' },
       take: 100,
       include: {
@@ -204,8 +205,19 @@ async function updateFeedbackStatus(req, res) {
 
 async function markNotificationRead(req, res) {
   try {
+    const existingNotification = await prisma.notification.findFirst({
+      where: {
+        id: req.params.id,
+        type: 'FEEDBACK',
+      },
+    })
+
+    if (!existingNotification) {
+      return sendError(res, 'Không tìm thấy thông báo feedback', 404)
+    }
+
     const notification = await prisma.notification.update({
-      where: { id: req.params.id },
+      where: { id: existingNotification.id },
       data: { isRead: true },
       include: {
         user: {
@@ -224,7 +236,7 @@ async function markNotificationRead(req, res) {
     console.error('markNotificationRead error:', error.message)
     return sendError(
       res,
-      error.code === 'P2025' ? 'Khong tim thay thong bao' : error.message,
+      error.code === 'P2025' ? 'Không tìm thấy thông báo feedback' : error.message,
       error.code === 'P2025' ? 404 : getStatusCode(error)
     )
   }
@@ -233,7 +245,10 @@ async function markNotificationRead(req, res) {
 async function markAllNotificationsRead(req, res) {
   try {
     const result = await prisma.notification.updateMany({
-      where: { isRead: false },
+      where: {
+        isRead: false,
+        type: 'FEEDBACK',
+      },
       data: { isRead: true },
     })
 
