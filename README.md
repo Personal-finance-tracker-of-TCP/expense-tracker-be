@@ -1,4 +1,4 @@
-# MoneyTrack / FinTrack Backend
+#FinTrack Backend
 
 Backend MoneyTrack / FinTrack là REST API cho đồ án INT1334 Lập trình Web. Hệ thống phục vụ quản lý thu chi cá nhân, báo cáo, AI Advisor, notification, BankHub Sandbox và webhook SePay.
 

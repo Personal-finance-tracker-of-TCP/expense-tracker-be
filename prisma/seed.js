@@ -60,7 +60,7 @@ async function seedUsers() {
   const admin = await prisma.user.upsert({
     where: { email: "admin@moneytrack.local" },
     update: {
-      name: "Admin MoneyTrack",
+      name: "Admin FinTrack",
       passwordHash,
       role: "ADMIN",
       balance: 0,
@@ -76,7 +76,7 @@ async function seedUsers() {
       provider: "local",
     },
     create: {
-      name: "Admin MoneyTrack",
+      name: "Admin FinTrack",
       email: "admin@moneytrack.local",
       passwordHash,
       role: "ADMIN",
@@ -260,7 +260,7 @@ async function seedAiAdviceLog(user) {
         result: {
           summary: "Bạn đang tiết kiệm tốt trong tháng 6.",
           suggestions: [
-            "Liên kết ngân hàng để MoneyTrack tự động ghi nhận giao dịch chuyển khoản.",
+            "Liên kết ngân hàng để FinTrack tự động ghi nhận giao dịch chuyển khoản.",
             "Tiếp tục giữ chi tiêu ăn uống dưới 1.000.000đ.",
           ],
         },
