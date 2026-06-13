@@ -1,0 +1,5 @@
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bankhubAccountXid" VARCHAR(128);
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bankName" VARCHAR(64);
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bankAccountName" VARCHAR(128);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "User_bankhubAccountXid_key" ON "User"("bankhubAccountXid");

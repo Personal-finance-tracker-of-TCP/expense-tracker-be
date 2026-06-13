@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum TxType {
+  INCOME
+  EXPENSE
+}
+
+enum TxSource {
+  MANUAL
+  SEPAY
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+  BOTH
+}
+
+enum PeriodType {
+  MONTHLY
+  TOTAL
+}
+
+enum TransferType {
+  IN
+  OUT
+}
+
+enum SepayLogStatus {
+  PENDING
+  PROCESSED
+  DUPLICATE
+  UNMATCHED
+  FAILED
+}
+
+enum TransactionClassificationStatus {
+  UNCLASSIFIED
+  CLASSIFIED
+  EXCLUDED
+}
+
+enum ExportFormat {
+  PDF
+  EXCEL
+}
+
+// ─── Models ───────────────────────────────────────────────
+
+model User {
+  id           String  @id @default(cuid())
+  name         String
+  email        String  @unique
+  passwordHash String? // null nếu đăng ký bằng OAuth
+  role         Role    @default(USER)
+  balance      Decimal @default(0) @db.Decimal(15, 2)
+
+  // Dùng cho demo SePay: nội dung chuyển khoản chứa MTU001, MTU002...
+  sepayCode String? @unique @db.VarChar(32)
+
+  // Có thể lưu số tài khoản cá nhân nếu cần hiển thị/hướng mở rộng
+  bankAccountNumber String? @db.VarChar(64)
+  bankhubAccountXid String? @unique @db.VarChar(128)
+  bankName          String? @db.VarChar(64)
+  bankAccountName   String? @db.VarChar(128)
+  sepayLinkedAt     DateTime?
+
+  refreshToken String?
+  avatarUrl    String?
+  provider     String? @default("local")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  transactions Transaction[]
+  budgets      Budget[]
+  categories   Category[]
+  aiAdviceLogs AiAdviceLog[]
+  exportLogs   ReportExportLog[]
+  notifications Notification[]
+  passwordResetTokens PasswordResetToken[]
+  feedbacks Feedback[]
+
+  @@index([role])
+}
+
+model EmailVerificationToken {
+  id String @id @default(cuid())
+
+  email String @db.VarChar(320)
+  otpHash String
+  expiresAt DateTime
+  usedAt DateTime?
+  attemptCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Transaction {
+  id     String @id @default(cuid())
+  userId String
+
+  // Nullable để giao dịch SePay mới về có thể chưa phân loại
+  categoryId String?
+
+  type            TxType
+  amount          Decimal  @db.Decimal(15, 2)
+  note            String?
+  transactionDate DateTime @default(now())
+  source          TxSource @default(MANUAL)
+  classificationStatus TransactionClassificationStatus @default(UNCLASSIFIED)
+
+  // ID giao dịch từ SePay, dùng chống duplicate
+  sepayId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  sepayLog SepayLog?
+
+  @@index([userId, transactionDate])
+  @@index([userId, source])
+  @@index([classificationStatus])
+  @@index([categoryId])
+  @@index([sepayId])
+}
+
+model Category {
+  id String @id @default(cuid())
+
+  // null = danh mục mặc định hệ thống
+  userId String?
+
+  name      String
+  icon      String?
+  color     String?
+  type      CategoryType
+  isDefault Boolean      @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  budgets      Budget[]
+
+  // Cho phép:
+  // - category mặc định unique theo name + type + isDefault
+  // - mỗi user có thể có category riêng trùng tên với user khác
+  @@unique([userId, name, type])
+  @@index([userId])
+  @@index([type])
+}
+
+model Budget {
+  id          String     @id @default(cuid())
+  userId      String
+  categoryId  String
+  limitAmount Decimal    @db.Decimal(15, 2)
+  period      PeriodType
+
+  // MONTHLY: cần month + year
+  // TOTAL: month có thể null, year vẫn dùng để gom theo năm hoặc đặt mốc
+  month Int?
+  year  Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, categoryId, period, month, year])
+  @@index([userId])
+  @@index([categoryId])
+  @@index([period, month, year])
+}
+
+model SepayLog {
+  id String @id @default(cuid())
+
+  // ID webhook/giao dịch từ SePay
+  sepayId String @unique
+
+  gateway         String
+  transferAmount  Decimal      @db.Decimal(15, 2)
+  transferType    TransferType
+  content         String?
+  transactionDate DateTime
+
+  // Mã user extract từ content, ví dụ MTU001
+  matchedCode String? @db.VarChar(128)
+
+  status      SepayLogStatus @default(PENDING)
+  processed   Boolean        @default(false)
+  errorReason String?
+
+  transactionId String? @unique
+
+  rawPayload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([transactionDate])
+  @@index([status])
+  @@index([matchedCode])
+}
+
+model AiAdviceLog {
+  id     String @id @default(cuid())
+  userId String
+
+  // Ví dụ: LAST_3_MONTHS, MONTH_2026_06
+  period String
+
+  // Hash của dữ liệu summary để cache nếu muốn
+  inputHash String?
+
+  // Dữ liệu tổng hợp gửi cho AI, không chứa email/name/raw transaction đầy đủ
+  inputSummary Json
+
+  // Kết quả AI trả về hoặc fallback rule-based
+  result Json
+
+  provider  String? // GEMINI, OPENAI, RULE_BASED
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([period])
+  @@index([createdAt])
+}
+
+model ReportExportLog {
+  id     String       @id @default(cuid())
+  userId String
+  format ExportFormat
+
+  month    Int?
+  year     Int?
+  fromDate DateTime?
+  toDate   DateTime?
+
+  fileName  String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([format])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("SEPAY_INCOME")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  type      String   @default("OTHER")
+  status    String   @default("NEW")
+  rating    Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id String @id @default(cuid())
+
+  userId String
+  otpHash String
+  expiresAt DateTime
+  usedAt DateTime?
+  attemptCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
