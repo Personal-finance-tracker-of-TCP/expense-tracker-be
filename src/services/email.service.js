@@ -3,17 +3,36 @@ const nodemailer = require('nodemailer')
 
 dns.setDefaultResultOrder('ipv4first')
 
+const TRANSIENT_SMTP_ERROR_CODES = new Set([
+  'ETIMEDOUT',
+  'ECONNECTION',
+  'ESOCKET',
+  'ECONNRESET',
+  'EAI_AGAIN',
+])
+
 let smtpTransporter = null
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isTransientSmtpError(error) {
+  return TRANSIENT_SMTP_ERROR_CODES.has(error?.code)
+}
 
 function formatSmtpError(error) {
   if (error?.code === 'EAUTH' || error?.responseCode === 535) {
-    return 'Gmail từ chối đăng nhập SMTP. Hãy dùng Gmail App Password cho SMTP_PASS, không dùng mật khẩu Gmail thường.'
+    return 'SMTP từ chối đăng nhập. Với SendGrid, SMTP_USER phải là "apikey" và SMTP_PASS phải là SendGrid API Key.'
   }
 
   if (
     error?.code === 'ECONNECTION' ||
     error?.code === 'ETIMEDOUT' ||
-    error?.code === 'ENETUNREACH'
+    error?.code === 'ENETUNREACH' ||
+    error?.code === 'ESOCKET' ||
+    error?.code === 'ECONNRESET' ||
+    error?.code === 'EAI_AGAIN'
   ) {
     return 'Không thể kết nối máy chủ SMTP. Hãy kiểm tra SMTP_HOST, SMTP_PORT, SMTP_SECURE và mạng.'
   }
@@ -21,11 +40,12 @@ function formatSmtpError(error) {
   return error?.message || 'Không thể gửi email OTP qua SMTP'
 }
 
-function logSafeSmtpError(error) {
+function logSafeSmtpError(error, attempt) {
   console.error('SMTP send failed:', {
+    attempt,
     code: error?.code,
-    responseCode: error?.responseCode,
     command: error?.command,
+    responseCode: error?.responseCode,
     message: formatSmtpError(error),
   })
 }
@@ -33,7 +53,7 @@ function logSafeSmtpError(error) {
 function getSmtpConfig() {
   const host = process.env.SMTP_HOST
   const port = Number(process.env.SMTP_PORT || 587)
-  const secure = String(process.env.SMTP_SECURE).toLowerCase() === 'true'
+  const secure = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true'
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
   const fromEmail = process.env.SMTP_FROM_EMAIL || user
@@ -48,7 +68,7 @@ function getSmtpConfig() {
   }
 
   if (!pass) {
-    throw new Error('Thiếu SMTP_PASS. Gmail cần App Password để gửi OTP thật.')
+    throw new Error('Thiếu SMTP_PASS. Với SendGrid, SMTP_PASS phải là SendGrid API Key.')
   }
 
   if (!Number.isInteger(port) || port <= 0) {
@@ -67,6 +87,9 @@ function getSmtpTransporter() {
     port,
     secure,
     family: 4,
+    connectionTimeout: 20000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
     auth: {
       user,
       pass,
@@ -121,19 +144,41 @@ function createOtpEmailContent({
   }
 }
 
+async function sendMailWithRetry(transporter, mailOptions, maxAttempts = 2) {
+  let lastError
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await transporter.sendMail(mailOptions)
+    } catch (error) {
+      lastError = error
+      logSafeSmtpError(error, attempt)
+
+      if (!isTransientSmtpError(error) || attempt === maxAttempts) {
+        break
+      }
+
+      smtpTransporter = null
+      await delay(500 * attempt)
+      transporter = getSmtpTransporter()
+    }
+  }
+
+  throw lastError
+}
+
 async function sendOtpBySmtp(content) {
   const { fromEmail, fromName } = getSmtpConfig()
   const transporter = getSmtpTransporter()
 
   try {
-    await transporter.sendMail({
+    await sendMailWithRetry(transporter, {
       from: `"${fromName}" <${fromEmail}>`,
       ...content,
     })
 
     return { delivered: true, provider: 'smtp' }
   } catch (error) {
-    logSafeSmtpError(error)
     throw new Error(formatSmtpError(error))
   }
 }
