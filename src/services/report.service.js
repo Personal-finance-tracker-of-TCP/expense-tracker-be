@@ -2,7 +2,7 @@ const prisma = require('../lib/prisma')
 
 const classifiedWhere = { classificationStatus: 'CLASSIFIED' }
 
-// Helper: xác định khoảng thời gian từ query
+// Helper: xác định khoảng thời gian từ query.
 const getDateRange = (query = {}) => {
   const { from, to, month, year } = query
 
@@ -32,7 +32,7 @@ const getDateRange = (query = {}) => {
     }
   }
 
-  // Mặc định: tháng hiện tại
+  // Mặc định: tháng hiện tại.
   const now = new Date()
 
   return {
@@ -41,7 +41,7 @@ const getDateRange = (query = {}) => {
   }
 }
 
-// Tổng hợp thu/chi/tiết kiệm trong kỳ
+// Tổng hợp thu/chi/tiết kiệm trong kỳ.
 const getSummary = async (userId, query) => {
   const dateRange = getDateRange(query)
 
@@ -58,12 +58,12 @@ const getSummary = async (userId, query) => {
   })
 
   const totalIncome = transactions
-    .filter((t) => t.type === 'INCOME')
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+    .filter((transaction) => transaction.type === 'INCOME')
+    .reduce((sum, transaction) => sum + Number(transaction.amount), 0)
 
   const totalExpense = transactions
-    .filter((t) => t.type === 'EXPENSE')
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+    .filter((transaction) => transaction.type === 'EXPENSE')
+    .reduce((sum, transaction) => sum + Number(transaction.amount), 0)
 
   const savings = totalIncome - totalExpense
 
@@ -78,7 +78,7 @@ const getSummary = async (userId, query) => {
   }
 }
 
-// Dữ liệu biểu đồ thu/chi theo từng tháng 6 tháng gần nhất
+// Dữ liệu biểu đồ thu/chi theo từng tháng 6 tháng gần nhất.
 const getChartData = async (userId, query = {}) => {
   const months = Array.from({ length: 6 }, (_, i) => {
     const date = new Date()
@@ -110,12 +110,12 @@ const getChartData = async (userId, query = {}) => {
       })
 
       const income = transactions
-        .filter((t) => t.type === 'INCOME')
-        .reduce((sum, t) => sum + Number(t.amount), 0)
+        .filter((transaction) => transaction.type === 'INCOME')
+        .reduce((sum, transaction) => sum + Number(transaction.amount), 0)
 
       const expense = transactions
-        .filter((t) => t.type === 'EXPENSE')
-        .reduce((sum, t) => sum + Number(t.amount), 0)
+        .filter((transaction) => transaction.type === 'EXPENSE')
+        .reduce((sum, transaction) => sum + Number(transaction.amount), 0)
 
       return {
         month,
@@ -126,7 +126,7 @@ const getChartData = async (userId, query = {}) => {
     })
   )
 
-  // Phân bổ chi tiêu theo danh mục
+  // Phân bổ chi tiêu theo danh mục.
   const dateRange = getDateRange(query)
 
   const categoryBreakdown = await prisma.transaction.groupBy({
@@ -149,7 +149,7 @@ const getChartData = async (userId, query = {}) => {
   })
 
   const categoryIds = categoryBreakdown
-    .map((c) => c.categoryId)
+    .map((category) => category.categoryId)
     .filter(Boolean)
 
   const categories = await prisma.category.findMany({
@@ -165,17 +165,17 @@ const getChartData = async (userId, query = {}) => {
     }
   })
 
-  const breakdown = categoryBreakdown.map((c) => {
-    const cat = categories.find((category) => category.id === c.categoryId) || {
+  const breakdown = categoryBreakdown.map((categoryGroup) => {
+    const category = categories.find((item) => item.id === categoryGroup.categoryId) || {
       name: 'Chưa phân loại',
-      icon: '📦'
+      icon: ''
     }
 
     return {
-      categoryId: c.categoryId,
-      name: cat?.name || 'Không phân loại',
-      icon: cat?.icon || '📦',
-      total: Number(c._sum.amount || 0)
+      categoryId: categoryGroup.categoryId,
+      name: category?.name || 'Không phân loại',
+      icon: category?.icon || '',
+      total: Number(categoryGroup._sum.amount || 0)
     }
   })
 
@@ -185,7 +185,7 @@ const getChartData = async (userId, query = {}) => {
   }
 }
 
-// Lấy data để xuất PDF/Excel
+// Lấy data để xuất PDF/Excel.
 const getExportData = async (userId, query) => {
   const dateRange = getDateRange(query)
 
