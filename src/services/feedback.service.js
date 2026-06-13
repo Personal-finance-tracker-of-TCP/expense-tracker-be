@@ -7,15 +7,15 @@ function truncateText(text, maxLength = 180) {
 
 function buildFeedbackNotificationMessage(data) {
   const senderParts = [data.senderName, data.senderEmail].filter(Boolean)
-  const senderText = senderParts.length > 0 ? senderParts.join(' - ') : 'Nguoi dung'
+  const senderText = senderParts.length > 0 ? senderParts.join(' - ') : 'Người dùng'
   const preview = truncateText(data.message)
 
   return [
-    `Tieu de: ${data.title}`,
-    `Loai: ${data.type || 'OTHER'}`,
-    data.rating ? `Danh gia: ${data.rating}/5` : null,
-    `Nguoi gui: ${senderText}`,
-    `Noi dung: ${preview}`,
+    `Tiêu đề: ${data.title}`,
+    `Loại: ${data.type || 'OTHER'}`,
+    data.rating ? `Đánh giá: ${data.rating}/5` : null,
+    `Người gửi: ${senderText}`,
+    `Nội dung: ${preview}`,
   ]
     .filter(Boolean)
     .join('\n')
@@ -31,7 +31,7 @@ async function notifyAdmins(data) {
     return {
       adminCount: 0,
       notificationCount: 0,
-      message: 'Khong co admin de nhan phan hoi',
+      message: 'Không có admin để nhận phản hồi',
     }
   }
 
@@ -39,7 +39,7 @@ async function notifyAdmins(data) {
   await prisma.notification.createMany({
     data: admins.map((admin) => ({
       userId: admin.id,
-      title: 'Phan hoi moi tu nguoi dung',
+      title: 'Phản hồi mới từ người dùng',
       message: notificationMessage,
       type: 'FEEDBACK',
       isRead: false,
@@ -49,7 +49,7 @@ async function notifyAdmins(data) {
   return {
     adminCount: admins.length,
     notificationCount: admins.length,
-    message: 'Phan hoi da duoc gui toi admin.',
+    message: 'Phản hồi đã được gửi tới admin.',
   }
 }
 
@@ -75,7 +75,11 @@ async function createFeedback(data) {
     },
   })
 
-  const notificationResult = await notifyAdmins(data)
+  const notificationResult = await notifyAdmins({
+    ...data,
+    senderName: data.senderName || feedback.user?.name,
+    senderEmail: data.senderEmail || feedback.user?.email,
+  })
 
   return {
     feedback,

@@ -6,7 +6,7 @@ const {
 } = require('../validators/budget.validator')
 
 function getValidationMessage(error) {
-  return error.issues?.[0]?.message || 'Du lieu khong hop le'
+  return error.issues?.[0]?.message || 'Dữ liệu không hợp lệ'
 }
 
 function getStatusCode(error) {
@@ -19,7 +19,7 @@ async function getBudgets(req, res) {
     return sendSuccess(res, budgets)
   } catch (err) {
     console.error('getBudgets error:', err)
-    return sendError(res, 'Loi khi lay danh sach ngan sach', 500)
+    return sendError(res, 'Lỗi khi lấy danh sách ngân sách', 500)
   }
 }
 
@@ -34,7 +34,7 @@ async function createBudget(req, res) {
     return sendSuccess(res, budget, 201)
   } catch (err) {
     console.error('createBudget error:', err)
-    return sendError(res, err.message || 'Loi khi tao ngan sach', getStatusCode(err))
+    return sendError(res, err.message || 'Lỗi khi tạo ngân sách', getStatusCode(err))
   }
 }
 
@@ -52,13 +52,13 @@ async function updateBudget(req, res) {
     )
 
     if (!budget) {
-      return sendError(res, 'Khong tim thay ngan sach hoac khong co quyen', 404)
+      return sendError(res, 'Không tìm thấy ngân sách hoặc không có quyền', 404)
     }
 
     return sendSuccess(res, budget)
   } catch (err) {
     console.error('updateBudget error:', err)
-    return sendError(res, err.message || 'Loi khi cap nhat ngan sach', getStatusCode(err))
+    return sendError(res, err.message || 'Lỗi khi cập nhật ngân sách', getStatusCode(err))
   }
 }
 
@@ -66,13 +66,13 @@ async function deleteBudget(req, res) {
   try {
     const result = await budgetService.deleteBudget(req.user.userId, req.params.id)
     if (!result) {
-      return sendError(res, 'Khong tim thay ngan sach hoac khong co quyen', 404)
+      return sendError(res, 'Không tìm thấy ngân sách hoặc không có quyền', 404)
     }
 
-    return sendSuccess(res, { message: 'Xoa ngan sach thanh cong' })
+    return sendSuccess(res, { message: 'Xóa ngân sách thành công' })
   } catch (err) {
     console.error('deleteBudget error:', err)
-    return sendError(res, 'Loi khi xoa ngan sach', 500)
+    return sendError(res, 'Lỗi khi xóa ngân sách', 500)
   }
 }
 
