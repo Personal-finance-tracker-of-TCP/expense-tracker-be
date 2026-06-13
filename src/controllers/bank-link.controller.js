@@ -14,7 +14,7 @@ function getSystemBank() {
   return {
     name: process.env.SYSTEM_BANK_NAME || 'MBBank',
     accountNumber: process.env.SYSTEM_BANK_ACCOUNT || '970400000000',
-    accountHolder: process.env.SYSTEM_BANK_HOLDER || 'CONG TY CONG NGHE MONEYTRACK',
+    accountHolder: process.env.SYSTEM_BANK_HOLDER || 'CONG TY CONG NGHE FinTrack',
   }
 }
 

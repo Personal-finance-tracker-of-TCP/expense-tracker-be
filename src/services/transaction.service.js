@@ -10,6 +10,12 @@ const CLASSIFIED_ONLY_WHERE = {
   classificationStatus: CLASSIFICATION.CLASSIFIED,
 }
 
+function createHttpError(message, statusCode) {
+  const error = new Error(message)
+  error.statusCode = statusCode
+  return error
+}
+
 function getBalanceDelta(type, amount) {
   const numericAmount = Number(amount)
   return type === 'INCOME' ? numericAmount : -numericAmount
@@ -66,9 +72,25 @@ async function getTransactions(userId, query) {
   }
 }
 
+async function getOwnedTransactionOrThrow(userId, transactionId, options = {}) {
+  const transaction = await prisma.transaction.findUnique({
+    where: { id: transactionId },
+    ...options,
+  })
+
+  if (!transaction) {
+    throw createHttpError('Không tìm thấy giao dịch', 404)
+  }
+
+  if (transaction.userId !== userId) {
+    throw createHttpError('Không có quyền truy cập giao dịch này', 403)
+  }
+
+  return transaction
+}
+
 async function getTransactionById(userId, transactionId) {
-  return prisma.transaction.findFirst({
-    where: { id: transactionId, userId },
+  return getOwnedTransactionOrThrow(userId, transactionId, {
     include: { category: { select: { id: true, name: true, icon: true } } }
   })
 }
@@ -155,17 +177,7 @@ async function updateTransaction(userId, transactionId, data) {
 }
 
 async function deleteTransaction(userId, transactionId) {
-  const existing = await prisma.transaction.findFirst({
-    where: { id: transactionId, userId }
-  })
-
-  if (!existing) return null
-
-  if (existing.source === 'SEPAY') {
-    const error = new Error('Khong xoa cung giao dich SePay; hay dung bo qua de giu audit')
-    error.statusCode = 400
-    throw error
-  }
+  const existing = await getOwnedTransactionOrThrow(userId, transactionId)
 
   return prisma.$transaction(async (tx) => {
     await tx.transaction.delete({ where: { id: transactionId } })
@@ -209,6 +221,10 @@ async function excludeTransaction(requesterId, transactionId) {
   const { transaction } = await findTransactionForMutation(requesterId, transactionId)
 
   if (!transaction) return null
+
+  if (transaction.source !== 'SEPAY') {
+    throw createHttpError('Chỉ giao dịch từ SePay mới có thể bỏ qua khỏi báo cáo.', 400)
+  }
 
   return prisma.transaction.update({
     where: { id: transaction.id },

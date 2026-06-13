@@ -300,12 +300,13 @@ async function callGemini(summary) {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
   const prompt = [
-    'You are a personal finance advisor for MoneyTrack.',
+    'Bạn là cố vấn tài chính cá nhân trong ứng dụng FinTrack.',
+    'Hãy trả lời bằng tiếng Việt, ngắn gọn, thực tế, dựa trên dữ liệu giao dịch/ngân sách nếu có.',
+    'Không đưa ra lời khuyên đầu tư rủi ro hoặc cam kết lợi nhuận.',
     'Return only JSON with keys: provider, summary, riskLevel, insights, recommendations, savingGoal.',
     'summary must be a short string.',
     'insights must be an array of objects: { "title": string, "message": string, "severity": "LOW" | "MEDIUM" | "HIGH" }.',
     'recommendations must be an array of objects: { "title": string, "message": string }.',
-    'Use concise Vietnamese advice. Do not ask for personal identity details.',
     `Anonymized financial summary: ${JSON.stringify(summary)}`,
   ].join('\n')
 
@@ -427,9 +428,9 @@ async function chat(userId, body = {}) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
   const prompt = [
-    'You are a personal finance advisor for MoneyTrack.',
-    'Provide a helpful, friendly, and concise answer in Vietnamese.',
-    'Do not ask for personal identity details.',
+    'Bạn là cố vấn tài chính cá nhân trong ứng dụng FinTrack.',
+    'Hãy trả lời bằng tiếng Việt, ngắn gọn, thực tế, dựa trên dữ liệu giao dịch/ngân sách nếu có.',
+    'Không đưa ra lời khuyên đầu tư rủi ro hoặc cam kết lợi nhuận.',
     `Anonymized financial summary of the user for period ${summary.period}: ${JSON.stringify(summary)}.`,
     `Chat history: ${JSON.stringify(history || [])}`,
     `User message: ${message}`

@@ -4,7 +4,7 @@ const {
   createTransactionSchema,
   updateTransactionSchema,
   classifyTransactionSchema,
-  getTransactionsQuerySchema
+  getTransactionsQuerySchema,
 } = require('../validators/transaction.validator')
 
 function getValidationMessage(error) {
@@ -29,11 +29,10 @@ async function getTransactions(req, res) {
 async function getTransactionById(req, res) {
   try {
     const transaction = await transactionService.getTransactionById(req.user.userId, req.params.id)
-    if (!transaction) return sendError(res, 'Không tìm thấy giao dịch', 404)
     return sendSuccess(res, transaction)
   } catch (err) {
     console.error('getTransactionById error:', err)
-    return sendError(res, 'Lỗi khi lấy giao dịch', 500)
+    return sendError(res, err.message || 'Lỗi khi lấy giao dịch', err.statusCode || 500)
   }
 }
 
@@ -64,7 +63,9 @@ async function updateTransaction(req, res) {
       req.params.id,
       parsed.data
     )
-    if (!transaction) return sendError(res, 'Không tìm thấy giao dịch hoặc không có quyền', 403)
+    if (!transaction) {
+      return sendError(res, 'Không tìm thấy giao dịch hoặc không có quyền', 403)
+    }
     return sendSuccess(res, transaction)
   } catch (err) {
     console.error('updateTransaction error:', err)
@@ -74,12 +75,11 @@ async function updateTransaction(req, res) {
 
 async function deleteTransaction(req, res) {
   try {
-    const result = await transactionService.deleteTransaction(req.user.userId, req.params.id)
-    if (!result) return sendError(res, 'Không tìm thấy giao dịch hoặc không có quyền', 403)
-    return sendSuccess(res, { message: 'Xoá giao dịch thành công' })
+    await transactionService.deleteTransaction(req.user.userId, req.params.id)
+    return sendSuccess(res, { message: 'Đã xóa giao dịch.' })
   } catch (err) {
     console.error('deleteTransaction error:', err)
-    return sendError(res, 'Lỗi khi xoá giao dịch', 500)
+    return sendError(res, err.message || 'Lỗi khi xóa giao dịch', err.statusCode || 500)
   }
 }
 
@@ -89,11 +89,13 @@ async function excludeTransaction(req, res) {
       req.user.userId,
       req.params.id
     )
-    if (!transaction) return sendError(res, 'Khong tim thay giao dich hoac khong co quyen', 403)
+    if (!transaction) {
+      return sendError(res, 'Không tìm thấy giao dịch hoặc không có quyền', 403)
+    }
     return sendSuccess(res, transaction)
   } catch (err) {
     console.error('excludeTransaction error:', err)
-    return sendError(res, err.message || 'Loi khi bo qua giao dich', err.statusCode || 500)
+    return sendError(res, err.message || 'Lỗi khi bỏ qua giao dịch', err.statusCode || 500)
   }
 }
 
@@ -109,11 +111,13 @@ async function classifyTransaction(req, res) {
       req.params.id,
       parsed.data
     )
-    if (!transaction) return sendError(res, 'Khong tim thay giao dich hoac khong co quyen', 403)
+    if (!transaction) {
+      return sendError(res, 'Không tìm thấy giao dịch hoặc không có quyền', 403)
+    }
     return sendSuccess(res, transaction)
   } catch (err) {
     console.error('classifyTransaction error:', err)
-    return sendError(res, err.message || 'Loi khi phan loai giao dich', err.statusCode || 500)
+    return sendError(res, err.message || 'Lỗi khi phân loại giao dịch', err.statusCode || 500)
   }
 }
 

@@ -2,6 +2,7 @@ const prisma = require('../lib/prisma')
 const { z } = require('zod')
 const adminService = require('../services/admin.service')
 const bankHubService = require('../services/bankhub.service')
+const feedbackService = require('../services/feedback.service')
 const notificationService = require('../services/notification.service')
 const webhookService = require('../services/webhook.service')
 const { sendSuccess, sendError } = require('../utils/response')
@@ -55,6 +56,12 @@ const assignBankhubAccountSchema = z.object({
   bankAccountNumber: z.string().trim().max(64).optional().nullable(),
   bankName: z.string().trim().max(64).optional().nullable(),
   bankAccountName: z.string().trim().max(128).optional().nullable(),
+})
+
+const updateFeedbackStatusSchema = z.object({
+  status: z.enum(['NEW', 'IN_PROGRESS', 'RESOLVED', 'DISMISSED'], {
+    message: 'status khong hop le',
+  }),
 })
 
 function getStatusCode(error) {
@@ -155,6 +162,43 @@ async function getNotifications(req, res) {
   } catch (error) {
     console.error('getNotifications error:', error.message)
     return sendError(res, 'Lỗi khi lấy danh sách thông báo', 500)
+  }
+}
+
+async function getFeedback(req, res) {
+  try {
+    const feedback = await feedbackService.listFeedback()
+    return sendSuccess(res, feedback)
+  } catch (error) {
+    console.error('getFeedback error:', error.message)
+    return sendError(res, 'Loi khi lay danh sach phan hoi', 500)
+  }
+}
+
+async function updateFeedbackStatus(req, res) {
+  const parsed = updateFeedbackStatusSchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    return sendError(
+      res,
+      parsed.error.issues?.[0]?.message || 'Du lieu trang thai khong hop le',
+      400
+    )
+  }
+
+  try {
+    const feedback = await feedbackService.updateFeedbackStatus(
+      req.params.id,
+      parsed.data.status
+    )
+    return sendSuccess(res, feedback)
+  } catch (error) {
+    console.error('updateFeedbackStatus error:', error.message)
+    return sendError(
+      res,
+      error.code === 'P2025' ? 'Khong tim thay phan hoi' : error.message,
+      error.code === 'P2025' ? 404 : getStatusCode(error)
+    )
   }
 }
 
@@ -273,7 +317,7 @@ async function unlinkBankhubAccountLocal(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: 'Đã hủy liên kết BankHub trong MoneyTrack. Tài khoản trên SePay Sandbox không bị hủy.',
+      message: 'Đã hủy liên kết BankHub trong FinTrack. Tài khoản trên SePay Sandbox không bị hủy.',
       data: updatedUser,
     })
   } catch (error) {
@@ -342,6 +386,8 @@ module.exports = {
   getLinkedUsers,
   getPlatformStatistics,
   getNotifications,
+  getFeedback,
+  updateFeedbackStatus,
   markNotificationRead,
   markAllNotificationsRead,
   createNotification,

@@ -108,7 +108,7 @@ async function refreshBankhubStatus(req, res) {
       return sendSuccess(res, {
         ...currentUser,
         isLinked: false,
-        message: 'User chua co BankHub XID trong MoneyTrack',
+        message: 'User chua co BankHub XID trong FinTrack',
       })
     }
 
