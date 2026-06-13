@@ -1,5 +1,4 @@
 const express = require('express')
-const cors = require('cors')
 const dotenv = require('dotenv')
 const path = require('path')
 
@@ -20,22 +19,21 @@ const allowedOrigins = [
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-      return callback(new Error(`CORS blocked origin: ${origin}`));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-webhook-secret"],
-  })
-);
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-webhook-secret"],
+}
 
-app.options("*", cors());
+app.use(cors(corsOptions));
+app.options("/{*splat}", cors(corsOptions));
 app.use(express.json({ limit: '2mb' }))
 const cookieParser = require('cookie-parser')
 app.use(cookieParser())
