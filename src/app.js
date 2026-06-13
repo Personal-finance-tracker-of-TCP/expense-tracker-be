@@ -14,9 +14,11 @@ const cors = require("cors");
 
 const allowedOrigins = [
   "http://localhost:3000",
-  process.env.FRONTEND_URL,
-  process.env.CORS_ORIGIN,
-].filter(Boolean);
+  ...(process.env.FRONTEND_URL || "").split(","),
+  ...(process.env.CORS_ORIGIN || "").split(","),
+]
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
