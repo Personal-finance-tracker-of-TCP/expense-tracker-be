@@ -233,6 +233,7 @@ const getExportData = async (userId, query) => {
 }
 
 module.exports = {
+  getDateRange,
   getSummary,
   getChartData,
   getExportData
