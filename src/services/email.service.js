@@ -1,4 +1,7 @@
+const dns = require('dns')
 const nodemailer = require('nodemailer')
+
+dns.setDefaultResultOrder('ipv4first')
 
 let smtpTransporter = null
 
@@ -7,17 +10,30 @@ function formatSmtpError(error) {
     return 'Gmail từ chối đăng nhập SMTP. Hãy dùng Gmail App Password cho SMTP_PASS, không dùng mật khẩu Gmail thường.'
   }
 
-  if (error?.code === 'ECONNECTION' || error?.code === 'ETIMEDOUT') {
-    return 'Không thể kết nối máy chủ SMTP. Hãy kiểm tra SMTP_HOST, SMTP_PORT và mạng.'
+  if (
+    error?.code === 'ECONNECTION' ||
+    error?.code === 'ETIMEDOUT' ||
+    error?.code === 'ENETUNREACH'
+  ) {
+    return 'Không thể kết nối máy chủ SMTP. Hãy kiểm tra SMTP_HOST, SMTP_PORT, SMTP_SECURE và mạng.'
   }
 
   return error?.message || 'Không thể gửi email OTP qua SMTP'
 }
 
+function logSafeSmtpError(error) {
+  console.error('SMTP send failed:', {
+    code: error?.code,
+    responseCode: error?.responseCode,
+    command: error?.command,
+    message: formatSmtpError(error),
+  })
+}
+
 function getSmtpConfig() {
   const host = process.env.SMTP_HOST
   const port = Number(process.env.SMTP_PORT || 587)
-  const secure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true'
+  const secure = String(process.env.SMTP_SECURE).toLowerCase() === 'true'
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
   const fromEmail = process.env.SMTP_FROM_EMAIL || user
@@ -50,6 +66,7 @@ function getSmtpTransporter() {
     host,
     port,
     secure,
+    family: 4,
     auth: {
       user,
       pass,
@@ -116,6 +133,7 @@ async function sendOtpBySmtp(content) {
 
     return { delivered: true, provider: 'smtp' }
   } catch (error) {
+    logSafeSmtpError(error)
     throw new Error(formatSmtpError(error))
   }
 }
