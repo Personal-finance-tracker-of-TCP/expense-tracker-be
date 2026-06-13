@@ -1,6 +1,6 @@
 #FinTrack Backend
 
-Backend MoneyTrack / FinTrack là REST API cho đồ án INT1334 Lập trình Web. Hệ thống phục vụ quản lý thu chi cá nhân, báo cáo, AI Advisor, notification, BankHub Sandbox và webhook SePay.
+Backend FinTrack là REST API cho đồ án INT1334 Lập trình Web. Hệ thống phục vụ quản lý thu chi cá nhân, báo cáo, AI Advisor, notification, BankHub Sandbox và webhook SePay.
 
 ## Tech Stack
 
@@ -173,51 +173,3 @@ Tất cả response JSON nên có dạng `{ success, data }` hoặc `{ success: 
 - Charts lấy dữ liệu từ report endpoints.
 - Jest unit tests với Prisma mocked, không gọi DB production.
 
-## Deployment Guide
-
-### Render
-
-1. Tạo PostgreSQL database hoặc dùng database cloud sẵn có.
-2. Tạo Web Service từ repo backend.
-3. Build command: `npm install && npx prisma generate && npx prisma migrate deploy`.
-4. Start command: `npm start`.
-5. Thêm env vars từ `.env.example` bằng giá trị production.
-6. Set `FRONTEND_URL` và `CORS_ORIGIN` về domain frontend.
-7. Sau deploy lần đầu, chạy seed thủ công nếu cần demo: `npx prisma db seed`.
-
-### Railway
-
-1. Tạo project Railway, thêm PostgreSQL plugin.
-2. Set `DATABASE_URL` từ Railway PostgreSQL.
-3. Deploy backend service từ repo.
-4. Start command: `npm start`.
-5. Chạy `npx prisma migrate deploy` trong deploy command hoặc Railway shell.
-6. Cấu hình webhook URL trên SePay: `https://<backend-domain>/api/webhooks/sepay-bankhub`.
-
-## Demo Script Bảo Vệ
-
-1. Chạy backend, migrate và seed.
-2. Login user `user@moneytrack.local`.
-3. Mở Dashboard xem tổng quan.
-4. Tạo/xem chi tiết/phân loại/xóa giao dịch.
-5. Export Reports PDF/Excel.
-6. Gọi AI Advisor/Chatbot.
-7. Login admin `admin@moneytrack.local`.
-8. Mở Admin BankHub Sandbox, chọn user đã liên kết, tạo giao dịch sandbox.
-9. Xem `/api/admin/sepay-logs` trên UI admin.
-10. Quay lại user, kiểm tra NotificationBell nhận thông báo mới.
-
-## Postman / API Docs
-
-Chưa có Postman collection trong repo. Có thể tạo collection theo bảng endpoint ở trên, cấu hình base URL:
-
-```text
-{{baseUrl}} = http://localhost:5000
-{{accessToken}} = token nhận từ /auth/login
-```
-
-Các route bảo vệ cần header:
-
-```http
-Authorization: Bearer {{accessToken}}
-```
