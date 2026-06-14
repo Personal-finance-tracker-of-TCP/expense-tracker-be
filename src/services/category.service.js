@@ -1,22 +1,20 @@
 const prisma = require('../lib/prisma')
 
-// Lấy danh mục hệ thống + danh mục cá nhân của user
 async function getCategories(userId) {
-  return prisma.category.findMany({
-    where: {
-      OR: [
-        { userId: null },   // danh mục mặc định hệ thống
-        { userId }          // danh mục cá nhân
-      ]
-    },
-    orderBy: [
-      { isDefault: 'desc' }, // mặc định hiện trước
-      { name: 'asc' }
-    ]
-  })
+  const [personalCategories, defaultCategories] = await Promise.all([
+    prisma.category.findMany({
+      where: { userId },
+      orderBy: { name: 'asc' }
+    }),
+    prisma.category.findMany({
+      where: { userId: null },
+      orderBy: { name: 'asc' }
+    })
+  ])
+
+  return [...personalCategories, ...defaultCategories]
 }
 
-// Tạo danh mục cá nhân
 async function createCategory(userId, data) {
   return prisma.category.create({
     data: {
@@ -27,10 +25,9 @@ async function createCategory(userId, data) {
   })
 }
 
-// Cập nhật danh mục — chỉ cho sửa danh mục của chính mình
 async function updateCategory(userId, categoryId, data) {
   const category = await prisma.category.findFirst({
-    where: { id: categoryId, userId } // userId phải khớp, không sửa được danh mục hệ thống
+    where: { id: categoryId, userId }
   })
 
   if (!category) return null
@@ -41,7 +38,6 @@ async function updateCategory(userId, categoryId, data) {
   })
 }
 
-// Xoá danh mục — kiểm tra còn giao dịch liên kết không
 async function deleteCategory(userId, categoryId) {
   const category = await prisma.category.findFirst({
     where: { id: categoryId, userId }
