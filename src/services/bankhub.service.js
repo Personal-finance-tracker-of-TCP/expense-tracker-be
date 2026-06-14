@@ -274,24 +274,53 @@ function extractLinkTokenResponse(responseBody = {}) {
   }
 }
 
-async function createLinkToken() {
+function buildLinkTokenPayload(companyXid, returnUrl) {
+  const payload = {
+    company_xid: companyXid,
+    purpose: 'LINK_BANK_ACCOUNT',
+  }
+
+  if (returnUrl) {
+    payload.redirect_url = returnUrl
+  }
+
+  return payload
+}
+
+async function requestLinkToken(payload) {
+  const body = await bankhubRequest('/v1/link-token/create', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+  return body
+}
+
+async function createLinkToken(options = {}) {
   const companyXid = process.env.BANKHUB_COMPANY_XID
   if (!companyXid) {
     throw createServiceError('Chua cau hinh BANKHUB_COMPANY_XID', 500)
   }
 
-  const body = await bankhubRequest('/v1/link-token/create', {
-    method: 'POST',
-    body: JSON.stringify({
-      company_xid: companyXid,
-      purpose: 'LINK_BANK_ACCOUNT',
-    }),
-  })
+  let body
+  let redirectUrlAccepted = Boolean(options.returnUrl)
+
+  try {
+    body = await requestLinkToken(buildLinkTokenPayload(companyXid, options.returnUrl))
+  } catch (error) {
+    if (!options.returnUrl || ![400, 422].includes(error.statusCode)) {
+      throw error
+    }
+
+    redirectUrlAccepted = false
+    body = await requestLinkToken(buildLinkTokenPayload(companyXid))
+  }
 
   return {
     ...extractLinkTokenResponse(body),
     companyXid,
     createdCompanyXid: null,
+    redirectUrlAccepted,
     raw: body,
   }
 }

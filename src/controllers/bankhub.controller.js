@@ -24,6 +24,18 @@ function getSafeUrlHost(value) {
   }
 }
 
+function getSafeReturnUrl(value) {
+  if (typeof value !== 'string') return null
+
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)) return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 function isActiveBankhubAccount(account) {
   const active = account.status?.active
   const connected = account.status?.bankApiConnected
@@ -66,7 +78,8 @@ const userBankhubSelect = {
 
 async function createHostedLink(req, res) {
   try {
-    const link = await bankhubService.createLinkToken()
+    const returnUrl = getSafeReturnUrl(req.body?.returnUrl)
+    const link = await bankhubService.createLinkToken({ returnUrl })
     const hostedLinkHost = getSafeUrlHost(link.hosted_link_url)
 
     console.info('BankHub hosted link debug', {
@@ -74,6 +87,7 @@ async function createHostedLink(req, res) {
       hostedLinkHost,
       xid: link.xid || null,
       expiresAt: link.expires_at || null,
+      redirectUrlAccepted: link.redirectUrlAccepted,
     })
 
     return sendSuccess(res, {
@@ -82,6 +96,7 @@ async function createHostedLink(req, res) {
       linkToken: link.link_token,
       xid: link.xid,
       expiresAt: link.expires_at,
+      redirectUrlAccepted: link.redirectUrlAccepted,
     })
   } catch (error) {
     console.error('createHostedLink error:', getSafeErrorLogMessage(error))
